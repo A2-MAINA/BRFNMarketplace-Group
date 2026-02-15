@@ -1,0 +1,34 @@
+# Environment variables (contains passwords and secrets)
+.env
+
+# Python bytecode files (compiled cache, regenerated automatically)
+__pycache__/
+*.pyc
+*.pyo
+
+# SQLite database file (we use PostgreSQL but just in case)
+db.sqlite3
+
+# Node.js dependencies (installed via npm install, not committed)
+node_modules/
+
+# Editor and IDE settings (personal to each developer)
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Python virtual environment (if anyone creates one locally)
+venv/
+env/
+.venv/
+
+# Log files
+*.log
+
+# Docker volumes (managed by Docker, not committed)
+postgres_data/
+
+# Static files collected by Django (generated, not committed)
+staticfiles/

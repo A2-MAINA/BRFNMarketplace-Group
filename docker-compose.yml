@@ -1,0 +1,59 @@
+
+services: # Define all containers that make up the application
+
+
+  # DATABASE SERVICE — PostgreSQL
+ 
+  db:
+    image: postgres:16-alpine # Use official PostgreSQL 16 image (alpine = smaller size)
+    container_name: brfn_db # Readable name instead of random Docker-generated name
+    restart: unless-stopped # Auto-restart on crash, only stops if manually stopped
+    environment: # Environment variables that PostgreSQL reads on first startup
+      POSTGRES_DB: brfn_db # Creates a database with this name
+      POSTGRES_USER: brfn_user # Creates a database user with this name
+      POSTGRES_PASSWORD: brfn_password # Sets the password for the database user
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # Persist database data so it survives container restarts
+    ports:
+      - "5432:5432" # Map host port 5432 to container port 5432 (host:container)
+
+ 
+  # BACKEND SERVICE — Django + DRF
+
+  backend:
+    build: ./backend # Build from the Dockerfile in the backend folder
+    container_name: brfn_backend # Readable container name
+    restart: unless-stopped # Auto-restart on crash
+    depends_on:
+      - db # Start the database container before this one
+    environment: # Environment variables that Django reads via os.environ.get()
+      DB_NAME: brfn_db # Must match POSTGRES_DB above
+      DB_USER: brfn_user # Must match POSTGRES_USER above
+      DB_PASSWORD: brfn_password # Must match POSTGRES_PASSWORD above
+      DB_HOST: db # 'db' is the service name — containers talk to each other by service name
+      DB_PORT: 5432 # PostgreSQL default port
+      SECRET_KEY: django-insecure-dev-key-change-in-production # Django cryptographic key (dev only)
+      DEBUG: "True" # Enable Django debug mode for development
+      ALLOWED_HOSTS: localhost,127.0.0.1 # Which hostnames Django accepts requests from
+    volumes:
+      - ./backend:/app # Bind mount — code changes on your machine reflect inside container instantly
+    ports:
+      - "8000:8000" # Access Django at localhost:8000 in your browser (host:container)
+
+
+  # FRONTEND SERVICE — Nginx placeholder (React later)
+
+  frontend:
+    build: ./frontend # Build from the Dockerfile in the frontend folder
+    container_name: brfn_frontend # Readable container name
+    restart: unless-stopped # Auto-restart on crash
+    depends_on:
+      - backend # Start the backend container before this one
+    ports:
+      - "3000:80" # Access frontend at localhost:3000, Nginx serves on port 80 internally (host:container)
+
+
+# NAMED VOLUMES — Persistent storage managed by Docker
+
+volumes:
+  postgres_data: # Declares the volume used by the db service to persist database data
