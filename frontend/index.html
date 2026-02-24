@@ -32,7 +32,6 @@
 
 <!-- ============================================================
      HOME PAGE
-============================================================ -->
 <div class="page active" id="page-home">
 
   <!-- HERO -->
@@ -188,7 +187,6 @@
 
 <!-- ============================================================
      BROWSE PAGE
-============================================================ -->
 <div class="page" id="page-browse">
   <div class="search-bar">
     <div class="search-bar-inner">
@@ -219,14 +217,12 @@
 
 <!-- ============================================================
      PRODUCT DETAIL
-============================================================ -->
 <div class="page" id="page-product">
   <div class="container" id="product-detail-content"></div>
 </div>
 
 <!-- ============================================================
      CART
-============================================================ -->
 <div class="page" id="page-cart">
   <div class="container">
     <div style="padding:40px 0 20px">
@@ -242,7 +238,6 @@
 
 <!-- ============================================================
      LOGIN
-============================================================ -->
 <div class="page" id="page-login">
   <div class="auth-page">
     <div class="auth-visual">
@@ -289,7 +284,6 @@
 
 <!-- ============================================================
      REGISTER
-============================================================ -->
 <div class="page" id="page-register">
   <div class="auth-page">
     <div class="auth-visual">
@@ -380,7 +374,6 @@
 
 <!-- ============================================================
      PRODUCER DASHBOARD
-============================================================ -->
 <div class="page" id="page-producer-dash">
   <div class="container">
     <div class="dashboard-layout">
@@ -572,7 +565,6 @@
 
 <!-- ============================================================
      CUSTOMER DASHBOARD
-============================================================ -->
 <div class="page" id="page-customer-dash">
   <div class="container">
     <div class="dashboard-layout">
@@ -669,5 +661,1012 @@
   // Default register to producer tab
   setRegisterRole('producer');
 </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BRFN Digital Marketplace</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            margin: 0;
+            background:
+                radial-gradient(circle at top left, #e9f7ec 0, transparent 55%),
+                radial-gradient(circle at bottom right, #e0f2e9 0, transparent 55%),
+                #f5f7f5;
+            color: #142414;
+            min-height: 100vh;
+            font-size: 15px;
+            line-height: 1.4;
+        }
+        header {
+            padding: 18px 40px;
+            background: white;
+            border-bottom: 1px solid #e0e4e0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            backdrop-filter: blur(12px);
+        }
+        header .title {
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        header .title-dot {
+            width: 26px;
+            height: 26px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #2f855a, #46b37a);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 16px;
+            font-weight: 700;
+        }
+        header .badge {
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: #e3f3e3;
+            color: #2d7c2d;
+            font-size: 12px;
+        }
+        header nav {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            font-size: 13px;
+            color: #5a655a;
+        }
+        header nav a {
+            text-decoration: none;
+            color: inherit;
+            padding: 4px 0;
+        }
+        header nav a:hover {
+            color: #1d7a3a;
+        }
+        header .nav-link-active {
+            color: #1d7a3a;
+            font-weight: 600;
+        }
+        header .nav-auth-button {
+            padding: 6px 16px;
+            border-radius: 999px;
+            border: 1px solid #c8decf;
+            background: #e6f6eb;
+            color: #1d7a3a;
+        }
+        header .account-indicator {
+            max-width: 260px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        header .nav-divider {
+            width: 1px;
+            height: 18px;
+            background: #e2e7e2;
+        }
+        .hero {
+            max-width: 1160px;
+            margin: 20px auto 0;
+            padding: 0 20px 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            font-size: 13px;
+            color: #4a564a;
+        }
+        .hero-title {
+            font-size: 20px;
+            font-weight: 600;
+        }
+        .hero-subtitle {
+            font-size: 13px;
+            color: #6b756b;
+        }
+        main {
+            max-width: 1160px;
+            margin: 32px auto 40px;
+            padding: 0 20px 24px;
+            display: grid;
+            grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+            gap: 24px;
+        }
+        @media (max-width: 900px) {
+            main {
+                grid-template-columns: minmax(0, 1fr);
+                margin-top: 20px;
+            }
+        }
+        .panel {
+            background: rgba(255, 255, 255, 0.96);
+            border-radius: 20px;
+            padding: 18px 20px;
+            box-shadow:
+                0 18px 40px rgba(15, 35, 20, 0.16),
+                0 0 0 1px rgba(180, 195, 185, 0.35);
+            border: 1px solid rgba(214, 224, 214, 0.8);
+        }
+        .panel h2 {
+            margin: 0 0 8px;
+            font-size: 19px;
+        }
+        .panel-subtitle {
+            margin: 0 0 16px;
+            font-size: 13px;
+            color: #6b756b;
+        }
+        .filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+        .filters select,
+        .filters input {
+            border-radius: 999px;
+            border: 1px solid #d0d7cf;
+            padding: 7px 14px;
+            font-size: 13px;
+            outline: none;
+            background: #f9fbf9;
+            transition: border-color 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+        }
+        .filters input {
+            flex: 1 1 180px;
+        }
+        .filters select:focus,
+        .filters input:focus {
+            border-color: #2f855a;
+            box-shadow: 0 0 0 1px rgba(47, 133, 90, 0.08);
+            background: #ffffff;
+        }
+        .product-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 420px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+        .product-card {
+            border-radius: 10px;
+            border: 1px solid #e0e4e0;
+            padding: 10px 12px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            background: #fafdf9;
+            transition: box-shadow 0.12s ease, transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+        }
+        .product-card:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 24px rgba(15, 35, 20, 0.12);
+            border-color: #c7d6c7;
+            background: #ffffff;
+        }
+        .product-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .product-name {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 2px;
+        }
+        .product-category {
+            font-size: 11px;
+            color: #2d7c2d;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .product-description {
+            font-size: 12px;
+            color: #6b756b;
+            margin-top: 2px;
+        }
+        .product-meta {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 4px;
+            min-width: 80px;
+        }
+        .price {
+            font-weight: 600;
+            color: #0c8a4b;
+        }
+        .stock {
+            font-size: 11px;
+            color: #6b756b;
+        }
+        button {
+            border-radius: 999px;
+            border: none;
+            padding: 6px 12px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease, transform 0.08s ease;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #1d7a3a, #36a35b);
+            color: white;
+            box-shadow: 0 10px 18px rgba(20, 96, 53, 0.26);
+        }
+        .btn-primary:disabled {
+            opacity: 0.4;
+            cursor: default;
+            box-shadow: none;
+        }
+        .btn-primary:not(:disabled):hover {
+            background: linear-gradient(135deg, #176132, #2b8e4a);
+            transform: translateY(-0.5px);
+        }
+        .btn-primary:not(:disabled):active {
+            transform: translateY(0);
+            box-shadow: 0 6px 12px rgba(20, 96, 53, 0.22);
+        }
+        .cart-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 260px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+        .cart-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+        }
+        .cart-item-main {
+            display: flex;
+            flex-direction: column;
+        }
+        .cart-controls {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .cart-controls button {
+            padding: 2px 8px;
+            font-size: 12px;
+        }
+        .cart-summary {
+            border-top: 1px solid #e0e4e0;
+            margin-top: 10px;
+            padding-top: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .cart-total-label {
+            font-size: 18px;
+        }
+        .chip {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            border: 1px solid #cdd9cd;
+            background: #f6fbf6;
+        }
+        .status {
+            font-size: 12px;
+            color: #6b756b;
+            margin-top: 4px;
+        }
+        .view-hidden {
+            display: none;
+        }
+        .auth-layout {
+            max-width: 860px;
+            margin: 24px auto 40px;
+            padding: 0 20px 24px;
+        }
+        .auth-card {
+            background: rgba(255, 255, 255, 0.96);
+            border-radius: 20px;
+            padding: 20px 22px;
+            box-shadow:
+                0 18px 40px rgba(15, 35, 20, 0.16),
+                0 0 0 1px rgba(180, 195, 185, 0.35);
+            border: 1px solid rgba(214, 224, 214, 0.8);
+        }
+        .auth-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .auth-tabs,
+        .auth-mode-toggle {
+            display: inline-flex;
+            border-radius: 999px;
+            background: #f2f7f3;
+            padding: 2px;
+            gap: 2px;
+        }
+        .auth-tab,
+        .auth-mode {
+            border: none;
+            background: transparent;
+            border-radius: 999px;
+            padding: 5px 12px;
+            font-size: 12px;
+            cursor: pointer;
+            color: #4a564a;
+        }
+        .auth-tab-active,
+        .auth-mode-active {
+            background: white;
+            color: #1d7a3a;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+        }
+        .auth-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+            gap: 24px;
+        }
+        @media (max-width: 800px) {
+            .auth-grid {
+                grid-template-columns: minmax(0, 1fr);
+            }
+        }
+        .auth-form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .auth-form-row {
+            display: flex;
+            gap: 10px;
+        }
+        .auth-form-row > div {
+            flex: 1;
+        }
+        .auth-label {
+            font-size: 12px;
+            margin-bottom: 2px;
+            color: #4a564a;
+        }
+        .auth-input,
+        .auth-textarea {
+            width: 100%;
+            border-radius: 10px;
+            border: 1px solid #d0d7cf;
+            padding: 7px 10px;
+            font-size: 13px;
+            outline: none;
+            background: #f9fbf9;
+            transition: border-color 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+        }
+        .auth-textarea {
+            min-height: 60px;
+            resize: vertical;
+        }
+        .auth-input:focus,
+        .auth-textarea:focus {
+            border-color: #2f855a;
+            box-shadow: 0 0 0 1px rgba(47, 133, 90, 0.08);
+            background: #ffffff;
+        }
+        .auth-checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: #4a564a;
+        }
+        .auth-actions {
+            margin-top: 12px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .auth-secondary {
+            background: #eef1ee;
+            color: #344034;
+            box-shadow: none;
+        }
+        .auth-secondary:hover {
+            background: #e3e7e3;
+        }
+        .auth-status {
+            font-size: 12px;
+            color: #6b756b;
+        }
+        .auth-status-error {
+            color: #a12f2f;
+        }
+        .auth-status-success {
+            color: #1d7a3a;
+        }
+        footer {
+            max-width: 1160px;
+            margin: 0 auto 24px;
+            padding: 0 20px;
+            font-size: 11px;
+            color: #7a847a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        footer span {
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="title">
+            <span class="title-dot">B</span>
+            <span>BRFN Digital Marketplace</span>
+        </div>
+        <nav>
+            <a href="#" id="navMarketplace" class="nav-link-active">Marketplace</a>
+            <a href="#" id="navAuth" class="nav-auth-button">Sign in / Register</a>
+            <span id="accountIndicator" class="chip account-indicator view-hidden"></span>
+            <div class="nav-divider"></div>
+            <span class="badge">Demo environment</span>
+        </nav>
+    </header>
+    <div class="hero">
+        <div>
+            <div class="hero-title">Local food, directly from BRFN producers</div>
+            <div class="hero-subtitle">Browse products, build a dispatch list, then log in to place real orders.</div>
+        </div>
+        <div class="hero-subtitle">Prototype interface for Distributed &amp; Enterprise Software Development.</div>
+    </div>
+    <main id="marketplaceView">
+        <section class="panel">
+            <h2>Available Products</h2>
+            <p class="panel-subtitle">Browse and add items to your cart. Prices are shown in GBP (£).</p>
+            <div class="filters">
+                <select id="categoryFilter">
+                    <option value="">All categories</option>
+                </select>
+                <input id="searchInput" type="search" placeholder="Search by name">
+            </div>
+            <div id="products" class="product-list"></div>
+            <div id="productStatus" class="status"></div>
+        </section>
+        <section class="panel">
+            <h2>Cart</h2>
+            <p class="panel-subtitle">Items you plan to dispatch.</p>
+            <div id="cartItems" class="cart-list"></div>
+            <div class="cart-summary">
+                <div id="cartCountLabel">0 items</div>
+                <div class="cart-total-label" id="cartTotalLabel">£0.00</div>
+            </div>
+            <div style="margin-top:10px;display:flex;justify-content:space-between;gap:8px;align-items:center">
+                <button id="clearCartBtn" class="btn-primary" style="background:#a12f2f">Clear cart</button>
+                <span class="chip">Cart stored locally in this browser</span>
+            </div>
+        </section>
+    </main>
+    <section id="authView" class="view-hidden">
+        <div class="auth-layout">
+            <div class="auth-card">
+                <div class="auth-header">
+                    <div>
+                        <h2 style="margin:0 0 4px;font-size:19px">Sign in or create an account</h2>
+                        <p class="panel-subtitle" style="margin:0">
+                            Use your BRFN email address. Choose whether you are a customer or producer.
+                        </p>
+                    </div>
+                    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+                        <div class="auth-tabs">
+                            <button type="button" class="auth-tab auth-tab-active" data-role="customer">Customer</button>
+                            <button type="button" class="auth-tab" data-role="producer">Producer</button>
+                        </div>
+                        <div class="auth-mode-toggle">
+                            <button type="button" class="auth-mode auth-mode-active" data-mode="login">Sign in</button>
+                            <button type="button" class="auth-mode" data-mode="register">Sign up</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="auth-grid">
+                    <form id="authForm">
+                        <div class="auth-form-group" id="authFields"></div>
+                        <div class="auth-actions">
+                            <button type="submit" class="btn-primary" id="authSubmitButton">Continue</button>
+                            <button type="button" class="auth-secondary" id="authBackToShop">Back to marketplace</button>
+                            <span id="authStatus" class="auth-status"></span>
+                        </div>
+                    </form>
+                    <div style="font-size:13px;color:#4a564a">
+                        <p style="margin-top:0">
+                            This panel connects to the BRFN Django API at
+                            <span style="font-weight:600">/api/auth/…</span>.
+                        </p>
+        +               <p style="margin-bottom:6px">
+                            <span style="font-weight:600">Customer accounts</span> are for people placing orders.
+                            You enter delivery details and accept terms and conditions.
+                        </p>
+                        <p style="margin-bottom:6px">
+                            <span style="font-weight:600">Producer accounts</span> are for organisations supplying food.
+                            You provide business details that link to product listings.
+                        </p>
+                        <p>
+                            In this prototype, successful sign in or registration shows a confirmation message below
+                            the button and stores your profile in this browser only. Use the marketplace tab to build
+                            your dispatch list while signed in.
+                        </p>
+                        <p style="font-size:12px;color:#6b756b">
+                            If you see an error such as a 403 or "invalid credentials", check that your account
+                            exists in the backend or contact the BRFN admin user for this environment.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    <footer>
+        <span>BRFN Distributed &amp; Enterprise Software Development – Sprint 1 demo</span>
+        <span>Backend: Django REST API · Frontend: Nginx static prototype</span>
+    </footer>
+    <script>
+        const API_BASE = 'http://localhost:8025/api';
+        const productsEl = document.getElementById('products');
+        const statusEl = document.getElementById('productStatus');
+        const categoryFilter = document.getElementById('categoryFilter');
+        const searchInput = document.getElementById('searchInput');
+        const cartItemsEl = document.getElementById('cartItems');
+        const cartCountLabel = document.getElementById('cartCountLabel');
+        const cartTotalLabel = document.getElementById('cartTotalLabel');
+        const clearCartBtn = document.getElementById('clearCartBtn');
+        const navMarketplace = document.getElementById('navMarketplace');
+        const navAuth = document.getElementById('navAuth');
+        const marketplaceView = document.getElementById('marketplaceView');
+        const authView = document.getElementById('authView');
+        const authTabs = Array.from(document.querySelectorAll('.auth-tab'));
+        const authModes = Array.from(document.querySelectorAll('.auth-mode'));
+        const authFields = document.getElementById('authFields');
+        const authForm = document.getElementById('authForm');
+        const authSubmitButton = document.getElementById('authSubmitButton');
+        const authStatus = document.getElementById('authStatus');
+        const authBackToShop = document.getElementById('authBackToShop');
+        const accountIndicator = document.getElementById('accountIndicator');
+
+        let allProducts = [];
+        let cart = {};
+        let authRole = 'customer';
+        let authMode = 'login';
+        let currentProfile = null;
+
+        function roleLabel(role) {
+            if (role === 'producer') return 'Producer';
+            if (role === 'customer') return 'Customer';
+            if (role === 'community_group') return 'Community group';
+            if (role === 'restaurant') return 'Restaurant';
+            if (role === 'admin') return 'Admin';
+            return 'User';
+        }
+
+        function updateAccountIndicator() {
+            if (currentProfile && currentProfile.email) {
+                const label = roleLabel(currentProfile.role) + ' · ' + currentProfile.email;
+                accountIndicator.textContent = label;
+                accountIndicator.classList.remove('view-hidden');
+                navAuth.textContent = 'Account';
+            } else {
+                accountIndicator.textContent = '';
+                accountIndicator.classList.add('view-hidden');
+                navAuth.textContent = 'Sign in / Register';
+            }
+        }
+
+        function saveCart() {
+            localStorage.setItem('brfn_cart', JSON.stringify(cart));
+        }
+
+        function loadCart() {
+            try {
+                const raw = localStorage.getItem('brfn_cart');
+                if (raw) {
+                    cart = JSON.parse(raw) || {};
+                }
+            } catch (_) {
+                cart = {};
+            }
+        }
+
+        function loadProfile() {
+            try {
+                const raw = localStorage.getItem('brfn_profile');
+                currentProfile = raw ? JSON.parse(raw) : null;
+            } catch (_) {
+                currentProfile = null;
+            }
+            updateAccountIndicator();
+        }
+
+        function renderProducts() {
+            const q = searchInput.value.toLowerCase().trim();
+            const categoryId = categoryFilter.value;
+
+            let filtered = allProducts.slice();
+            if (categoryId) {
+                filtered = filtered.filter(p => String(p.category) === String(categoryId));
+            }
+            if (q) {
+                filtered = filtered.filter(p => p.name.toLowerCase().includes(q));
+            }
+
+            if (!filtered.length) {
+                productsEl.innerHTML = '<p>No matching products.</p>';
+                statusEl.textContent = '';
+                return;
+            }
+
+            productsEl.innerHTML = filtered.map(p => {
+                const inCart = cart[p.id]?.quantity || 0;
+                const disabled = p.stock <= 0;
+                return `
+                    <div class="product-card">
+                        <div class="product-info">
+                            <div class="product-name">${p.name}</div>
+                            <div class="product-category">${p.category_name || ''}</div>
+                            <div class="product-description">${p.description || ''}</div>
+                        </div>
+                        <div class="product-meta">
+                            <div class="price">£${Number(p.price).toFixed(2)}</div>
+                            <div class="stock">${p.stock > 0 ? p.stock + ' in stock' : 'Out of stock'}</div>
+                            <button class="btn-primary" data-product-id="${p.id}" ${disabled ? 'disabled' : ''}>
+                                ${inCart ? 'Add more' : 'Add to cart'}
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            productsEl.querySelectorAll('button[data-product-id]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const id = btn.getAttribute('data-product-id');
+                    addToCart(id);
+                });
+            });
+
+            statusEl.textContent = filtered.length + ' product' + (filtered.length === 1 ? '' : 's');
+        }
+
+        function renderCart() {
+            const entries = Object.values(cart);
+            if (!entries.length) {
+                cartItemsEl.innerHTML = '<p>Your cart is empty. Use “Add to cart” to start a dispatch.</p>';
+                cartCountLabel.textContent = '0 items';
+                cartTotalLabel.textContent = '£0.00';
+                return;
+            }
+
+            let total = 0;
+            let count = 0;
+            cartItemsEl.innerHTML = entries.map(item => {
+                const line = item.price * item.quantity;
+                total += line;
+                count += item.quantity;
+                return `
+                    <div class="cart-item">
+                        <div class="cart-item-main">
+                            <span>${item.name}</span>
+                            <span style="font-size:11px;color:#6b756b">£${Number(item.price).toFixed(2)} each</span>
+                        </div>
+                        <div class="cart-controls" data-cart-id="${item.id}">
+                            <button data-action="dec">-</button>
+                            <span>${item.quantity}</span>
+                            <button data-action="inc">+</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            cartItemsEl.querySelectorAll('[data-cart-id]').forEach(el => {
+                const id = el.getAttribute('data-cart-id');
+                el.querySelectorAll('button').forEach(btn => {
+                    const action = btn.getAttribute('data-action');
+                    btn.addEventListener('click', () => {
+                        if (action === 'inc') changeQuantity(id, 1);
+                        if (action === 'dec') changeQuantity(id, -1);
+                    });
+                });
+            });
+
+            cartCountLabel.textContent = count + ' item' + (count === 1 ? '' : 's');
+            cartTotalLabel.textContent = '£' + total.toFixed(2);
+        }
+
+        function addToCart(id) {
+            const product = allProducts.find(p => String(p.id) === String(id));
+            if (!product) return;
+            const current = cart[id]?.quantity || 0;
+            if (current + 1 > product.stock) return;
+            cart[id] = {
+                id: product.id,
+                name: product.name,
+                price: Number(product.price),
+                quantity: current + 1
+            };
+            saveCart();
+            renderProducts();
+            renderCart();
+        }
+
+        function changeQuantity(id, delta) {
+            if (!cart[id]) return;
+            const product = allProducts.find(p => String(p.id) === String(id));
+            if (!product) return;
+            const next = cart[id].quantity + delta;
+            if (next <= 0) {
+                delete cart[id];
+            } else if (next <= product.stock) {
+                cart[id].quantity = next;
+            }
+            saveCart();
+            renderProducts();
+            renderCart();
+        }
+
+        clearCartBtn.addEventListener('click', () => {
+            cart = {};
+            saveCart();
+            renderProducts();
+            renderCart();
+        });
+
+        searchInput.addEventListener('input', () => {
+            renderProducts();
+        });
+
+        categoryFilter.addEventListener('change', () => {
+            renderProducts();
+        });
+
+        function setView(view) {
+            if (view === 'auth') {
+                marketplaceView.classList.add('view-hidden');
+                authView.classList.remove('view-hidden');
+                navMarketplace.classList.remove('nav-link-active');
+                navAuth.classList.add('nav-link-active');
+            } else {
+                authView.classList.add('view-hidden');
+                marketplaceView.classList.remove('view-hidden');
+                navAuth.classList.remove('nav-link-active');
+                navMarketplace.classList.add('nav-link-active');
+            }
+        }
+
+        function renderAuthFields() {
+            authStatus.textContent = '';
+            authStatus.className = 'auth-status';
+            const fields = [];
+            fields.push(`
+                <div>
+                    <div class="auth-label">Email</div>
+                    <input required type="email" id="authEmail" class="auth-input" autocomplete="email">
+                </div>
+            `);
+            fields.push(`
+                <div class="auth-form-row">
+                    <div>
+                        <div class="auth-label">Password</div>
+                        <input required type="password" id="authPassword" class="auth-input" autocomplete="current-password">
+                    </div>
+                    ${authMode === 'register' ? `
+                    <div>
+                        <div class="auth-label">Confirm password</div>
+                        <input required type="password" id="authPasswordConfirm" class="auth-input" autocomplete="new-password">
+                    </div>` : ''}
+                </div>
+            `);
+            if (authMode === 'register' && authRole === 'customer') {
+                fields.push(`
+                    <div class="auth-form-row">
+                        <div>
+                            <div class="auth-label">Full name</div>
+                            <input required type="text" id="authCustomerFullName" class="auth-input">
+                        </div>
+                        <div>
+                            <div class="auth-label">Phone number (optional)</div>
+                            <input type="text" id="authCustomerPhone" class="auth-input">
+                        </div>
+                    </div>
+                `);
+                fields.push(`
+                    <div>
+                        <div class="auth-label">Delivery address</div>
+                        <textarea required id="authCustomerAddress" class="auth-textarea"></textarea>
+                    </div>
+                `);
+                fields.push(`
+                    <div class="auth-form-row">
+                        <div>
+                            <div class="auth-label">Postcode</div>
+                            <input required type="text" id="authCustomerPostcode" class="auth-input">
+                        </div>
+                    </div>
+                `);
+                fields.push(`
+                    <label class="auth-checkbox-row">
+                        <input type="checkbox" id="authCustomerTerms">
+                        <span>I have read and accept the BRFN marketplace terms and conditions.</span>
+                    </label>
+                `);
+            }
+            if (authMode === 'register' && authRole === 'producer') {
+                fields.push(`
+                    <div class="auth-form-row">
+                        <div>
+                            <div class="auth-label">Business name</div>
+                            <input required type="text" id="authProducerBusinessName" class="auth-input">
+                        </div>
+                        <div>
+                            <div class="auth-label">Contact name</div>
+                            <input required type="text" id="authProducerContactName" class="auth-input">
+                        </div>
+                    </div>
+                `);
+                fields.push(`
+                    <div class="auth-form-row">
+                        <div>
+                            <div class="auth-label">Phone number (optional)</div>
+                            <input type="text" id="authProducerPhone" class="auth-input">
+                        </div>
+                        <div>
+                            <div class="auth-label">Postcode</div>
+                            <input required type="text" id="authProducerPostcode" class="auth-input">
+                        </div>
+                    </div>
+                `);
+                fields.push(`
+                    <div>
+                        <div class="auth-label">Business address</div>
+                        <textarea required id="authProducerAddress" class="auth-textarea"></textarea>
+                    </div>
+                `);
+                fields.push(`
+                    <div>
+                        <div class="auth-label">Short description (optional)</div>
+                        <textarea id="authProducerDescription" class="auth-textarea"></textarea>
+                    </div>
+                `);
+            }
+            authFields.innerHTML = fields.join('');
+            authSubmitButton.textContent = authMode === 'login' ? 'Sign in' : 'Create account';
+        }
+
+        async function submitAuthForm(event) {
+            event.preventDefault();
+            authStatus.textContent = 'Sending details…';
+            authStatus.className = 'auth-status';
+            const email = document.getElementById('authEmail').value.trim();
+            const password = document.getElementById('authPassword').value;
+            const payload = { email, password };
+            let url = API_BASE + '/auth/login/';
+            if (authMode === 'register') {
+                const passwordConfirm = document.getElementById('authPasswordConfirm').value;
+                payload.password_confirm = passwordConfirm;
+                if (authRole === 'customer') {
+                    payload.full_name = document.getElementById('authCustomerFullName').value.trim();
+                    payload.phone_number = document.getElementById('authCustomerPhone').value.trim();
+                    payload.delivery_address = document.getElementById('authCustomerAddress').value.trim();
+                    payload.postcode = document.getElementById('authCustomerPostcode').value.trim();
+                    payload.terms_accepted = document.getElementById('authCustomerTerms').checked;
+                    url = API_BASE + '/auth/register/customer/';
+                } else {
+                    payload.business_name = document.getElementById('authProducerBusinessName').value.trim();
+                    payload.contact_name = document.getElementById('authProducerContactName').value.trim();
+                    payload.phone_number = document.getElementById('authProducerPhone').value.trim();
+                    payload.address = document.getElementById('authProducerAddress').value.trim();
+                    payload.postcode = document.getElementById('authProducerPostcode').value.trim();
+                    payload.crn = '';
+                    payload.description = document.getElementById('authProducerDescription').value.trim();
+                    payload.food_hygiene_rating = null;
+                    url = API_BASE + '/auth/register/producer/';
+                }
+            }
+            try {
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify(payload),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    authStatus.textContent = data.detail || JSON.stringify(data) || 'Request failed.';
+                    authStatus.className = 'auth-status auth-status-error';
+                    return;
+                }
+                const profile = Array.isArray(data) ? data[0] : data;
+                localStorage.setItem('brfn_profile', JSON.stringify(profile));
+                currentProfile = profile;
+                updateAccountIndicator();
+                const label = profile && profile.email ? profile.email : email;
+                if (authMode === 'login') {
+                    authStatus.textContent = 'Signed in as ' + label + '.';
+                } else {
+                    authStatus.textContent = 'Account created for ' + label + '. You can now sign in.';
+                }
+                authStatus.className = 'auth-status auth-status-success';
+            } catch (error) {
+                authStatus.textContent = 'Could not reach the server.';
+                authStatus.className = 'auth-status auth-status-error';
+            }
+        }
+
+        async function loadInitialData() {
+            productsEl.innerHTML = '<p>Loading products…</p>';
+            statusEl.textContent = '';
+            try {
+                const [catRes, prodRes] = await Promise.all([
+                    fetch(API_BASE + '/categories/'),
+                    fetch(API_BASE + '/products/')
+                ]);
+                if (!catRes.ok || !prodRes.ok) {
+                    throw new Error();
+                }
+                const categories = await catRes.json();
+                allProducts = await prodRes.json();
+                categoryFilter.innerHTML = '<option value=\"\">All categories</option>' + categories.map(c => `<option value=\"${c.id}\">${c.name}</option>`).join('');
+                renderProducts();
+                renderCart();
+            } catch (_) {
+                productsEl.innerHTML = '<p>Failed to load products.</p>';
+            }
+        }
+
+        navMarketplace.addEventListener('click', (e) => {
+            e.preventDefault();
+            setView('marketplace');
+        });
+
+        navAuth.addEventListener('click', (e) => {
+            e.preventDefault();
+            setView('auth');
+        });
+
+        authTabs.forEach((btn) => {
+            btn.addEventListener('click', () => {
+                authTabs.forEach((b) => b.classList.remove('auth-tab-active'));
+                btn.classList.add('auth-tab-active');
+                authRole = btn.getAttribute('data-role');
+                renderAuthFields();
+            });
+        });
+
+        authModes.forEach((btn) => {
+            btn.addEventListener('click', () => {
+                authModes.forEach((b) => b.classList.remove('auth-mode-active'));
+                btn.classList.add('auth-mode-active');
+                authMode = btn.getAttribute('data-mode');
+                renderAuthFields();
+            });
+        });
+
+        authForm.addEventListener('submit', submitAuthForm);
+        authBackToShop.addEventListener('click', () => {
+            setView('marketplace');
+        });
+
+        loadCart();
+        loadProfile();
+        renderAuthFields();
+        loadInitialData();
+    </script>
 </body>
 </html>
