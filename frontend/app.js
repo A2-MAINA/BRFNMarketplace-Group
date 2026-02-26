@@ -1,181 +1,70 @@
 /* ============================================================
    BRFN MARKETPLACE — App Logic v2
-   Mock data matches Al-amin's backend models exactly:
-   User, ProducerProfile, CustomerProfile, Category, Product
+   Wired to backend API: auth, products, categories, cart.
    ============================================================ */
 
-// ---- REAL UNSPLASH IMAGES ----
+// ---- REAL UNSPLASH IMAGES (fallbacks when API has no image) ----
 const FARM_IMAGES = {
   'Bristol Valley Farm':  'images/farm.jpg',
   'Hillside Dairy':       'images/hillside.jpg',
   'Clifton Bakehouse':    'images/bakery.jpg',
   'Redland Growers':      'images/farm.jpg',
   'Avon Valley Kitchen':  'images/seasonal.jpg',
+  'Local producer':       'images/farm.jpg',
 };
 
-// ---- CATEGORIES (matches Category model) ----
-const CATEGORIES = [
-  {
-    id: 'all', name: 'All Products', count: 12,
-    img: 'images/vegetables.jpg',
-  },
-  {
-    id: 'veg', name: 'Vegetables', count: 4,
-    img: 'images/vegetables.jpg',
-  },
-  {
-    id: 'dairy', name: 'Dairy & Eggs', count: 3,
-    img: 'images/dairy.jpg',
-  },
-  {
-    id: 'bakery', name: 'Bakery', count: 2,
-    img: 'images/bakery.jpg',
-  },
-  {
-    id: 'preserves', name: 'Preserves', count: 2,
-    img: 'images/preserves.jpg',
-  },
-  {
-    id: 'seasonal', name: 'Seasonal Specialties', count: 3,
-    img: 'images/seasonal.jpg',
-  },
-];
+const CATEGORY_IMAGES = {
+  'Vegetables': 'images/vegetables.jpg',
+  'Dairy & Eggs': 'images/dairy.jpg',
+  'Bakery': 'images/bakery.jpg',
+  'Preserves': 'images/preserves.jpg',
+  'Seasonal Specialties': 'images/seasonal.jpg',
+};
 
-// ---- PRODUCTS (matches Product model fields) ----
-const PRODUCTS = [
-  {
-    id: 1, name: 'Organic Free Range Eggs',
-    category: 'dairy', category_name: 'Dairy & Eggs',
-    price: 3.50, unit: 'dozen',
-    producer: 'Bristol Valley Farm', producerInitial: 'BV',
-    description: 'Fresh organic eggs from free-range hens, collected daily. Our hens roam freely across 40 acres of organic pasture in the Bristol countryside.',
-    availability: 'In Season', stock: 50,
-    allergens: ['Eggs'], organic: true,
-    harvestDate: '2026-02-15',
-    img: 'images/eggs.jpg',
-  },
-  {
-    id: 2, name: 'Organic Carrots',
-    category: 'veg', category_name: 'Vegetables',
-    price: 1.80, unit: 'kg',
-    producer: 'Bristol Valley Farm', producerInitial: 'BV',
-    description: 'Sweet, freshly harvested organic carrots grown without pesticides. Perfect for roasting, soups, or fresh juicing.',
-    availability: 'Available', stock: 35,
-    allergens: [], organic: true,
-    harvestDate: '2026-02-14',
-    img: 'images/carrots.jpg',
-  },
-  {
-    id: 3, name: 'Fresh Whole Milk',
-    category: 'dairy', category_name: 'Dairy & Eggs',
-    price: 1.20, unit: 'litre',
-    producer: 'Hillside Dairy', producerInitial: 'HD',
-    description: 'Creamy whole milk from our small herd of Friesian cows, pasteurised and bottled on-farm the same morning.',
-    availability: 'Available', stock: 80,
-    allergens: ['Milk'], organic: false,
-    harvestDate: '2026-02-17',
-    img: 'images/dairy.jpg',
-  },
-  {
-    id: 4, name: 'Sourdough Loaf',
-    category: 'bakery', category_name: 'Bakery',
-    price: 4.50, unit: 'loaf',
-    producer: 'Clifton Bakehouse', producerInitial: 'CB',
-    description: 'Slow-fermented sourdough using a 20-year-old starter, baked fresh each morning in a stone deck oven.',
-    availability: 'In Season', stock: 12,
-    allergens: ['Gluten', 'Wheat'], organic: false,
-    harvestDate: '2026-02-17',
-    img: 'images/sourdough.jpg',
-  },
-  {
-    id: 5, name: 'Heritage Tomatoes',
-    category: 'veg', category_name: 'Vegetables',
-    price: 3.20, unit: 'kg',
-    producer: 'Redland Growers', producerInitial: 'RG',
-    description: 'A vibrant mix of heirloom tomato varieties — from sweet cherry to beefsteak — grown in our heated glasshouses.',
-    availability: 'Available', stock: 28,
-    allergens: [], organic: true,
-    harvestDate: '2026-02-16',
-    img: 'images/tomatoes.jpg',
-  },
-  {
-    id: 6, name: 'Mature Cheddar',
-    category: 'dairy', category_name: 'Dairy & Eggs',
-    price: 6.80, unit: '500g',
-    producer: 'Hillside Dairy', producerInitial: 'HD',
-    description: 'Aged 18 months in our stone cellar. Rich, nutty depth of flavour with a satisfying crumbly texture.',
-    availability: 'Available', stock: 20,
-    allergens: ['Milk'], organic: false,
-    harvestDate: '2025-08-01',
-    img: 'images/cheese.jpg',
-  },
-  {
-    id: 7, name: 'Wild Garlic Pesto',
-    category: 'preserves', category_name: 'Preserves',
-    price: 4.20, unit: '180g jar',
-    producer: 'Avon Valley Kitchen', producerInitial: 'AV',
-    description: 'Made from freshly foraged wild garlic, toasted pine nuts, and Somerset parmesan. Limited seasonal stock.',
-    availability: 'In Season', stock: 15,
-    allergens: ['Nuts', 'Milk'], organic: false,
-    harvestDate: '2026-02-10',
-    img: 'images/preserves.jpg',
-  },
-  {
-    id: 8, name: 'British Strawberries',
-    category: 'seasonal', category_name: 'Seasonal Specialties',
-    price: 3.80, unit: '400g punnet',
-    producer: 'Redland Growers', producerInitial: 'RG',
-    description: 'Sun-ripened British strawberries, picked to order for peak sweetness. Available June–August only.',
-    availability: 'In Season', stock: 40,
-    allergens: [], organic: false,
-    harvestDate: '2026-02-17',
-    img: 'images/strawberries.jpg',
-  },
-  {
-    id: 9, name: 'Mixed Salad Leaves',
-    category: 'veg', category_name: 'Vegetables',
-    price: 2.50, unit: '100g bag',
-    producer: 'Redland Growers', producerInitial: 'RG',
-    description: 'A vibrant mix of rocket, spinach, watercress and baby leaves, harvested and packed the same day.',
-    availability: 'Available', stock: 60,
-    allergens: [], organic: true,
-    harvestDate: '2026-02-17',
-    img: 'images/salad.jpg',
-  },
-  {
-    id: 10, name: 'Walnut Bread',
-    category: 'bakery', category_name: 'Bakery',
-    price: 3.80, unit: 'loaf',
-    producer: 'Clifton Bakehouse', producerInitial: 'CB',
-    description: 'Dense, flavourful bread packed with whole walnuts, baked with wholemeal flour and a touch of honey.',
-    availability: 'Available', stock: 8,
-    allergens: ['Gluten', 'Wheat', 'Nuts'], organic: false,
-    harvestDate: '2026-02-17',
-    img: 'images/sourdough.jpg',
-  },
-  {
-    id: 11, name: 'Cox Apples',
-    category: 'seasonal', category_name: 'Seasonal Specialties',
-    price: 2.20, unit: 'kg',
-    producer: 'Bristol Valley Farm', producerInitial: 'BV',
-    description: 'Cox, Braeburn and Discovery varieties from our century-old orchard. No waxing or chemical treatment.',
-    availability: 'Available', stock: 100,
-    allergens: [], organic: true,
-    harvestDate: '2026-02-12',
-    img: 'images/apples.jpg',
-  },
-  {
-    id: 12, name: 'Raw Set Honey',
-    category: 'preserves', category_name: 'Preserves',
-    price: 7.50, unit: '340g jar',
-    producer: 'Avon Valley Kitchen', producerInitial: 'AV',
-    description: 'Raw set honey from our urban hives, pollinated by Bristol\'s parks and gardens. Unfiltered and unpasteurised.',
-    availability: 'Available', stock: 22,
-    allergens: [], organic: false,
-    harvestDate: '2025-09-01',
-    img: 'images/preserves.jpg',
-  },
-];
+/** Map API product to UI shape (backend has id, name, description, price, image_url, stock, category, category_name). */
+function apiProductToUI(apiP) {
+  if (!apiP) return null;
+  const price = typeof apiP.price === 'number' ? apiP.price : parseFloat(apiP.price);
+  return {
+    id: apiP.id,
+    name: apiP.name,
+    description: apiP.description || '',
+    price,
+    category: apiP.category,
+    category_name: apiP.category_name || 'Products',
+    unit: 'unit',
+    producer: 'Local producer',
+    producerInitial: 'LP',
+    availability: (apiP.stock || 0) > 0 ? 'Available' : 'Out of stock',
+    stock: apiP.stock || 0,
+    allergens: [],
+    organic: false,
+    harvestDate: '',
+    img: apiP.image_url || 'images/vegetables.jpg',
+  };
+}
+
+/** Build categories for UI: "All" + API categories with counts from products. */
+function buildCategoriesForUI(apiCategories, products) {
+  const list = [{ id: 'all', name: 'All Products', count: products.length, img: 'images/vegetables.jpg' }];
+  (apiCategories || []).forEach(c => {
+    const count = products.filter(p => p.category === c.id).length;
+    list.push({
+      id: c.id,
+      name: c.name,
+      count,
+      img: CATEGORY_IMAGES[c.name] || 'images/vegetables.jpg',
+    });
+  });
+  return list;
+}
+
+/** Map API profile to state.currentUser shape. */
+function profileToUser(profile) {
+  if (!profile) return null;
+  const name = profile.name || [profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.email;
+  return { name, email: profile.email, role: profile.role, businessName: profile.business_name || null };
+}
 
 // ---- APP STATE ----
 const state = {
@@ -187,32 +76,65 @@ const state = {
   currentProduct: null,
   producerDashTab: 'overview',
   customerDashTab: 'orders',
+  categories: [],   // UI categories (All + from API)
+  products: [],     // Products from API (normalized)
 };
 
 // ---- CART ----
-function getCartTotal() { return state.cart.reduce((s, i) => s + i.price * i.qty, 0); }
-function getCartCount() { return state.cart.reduce((s, i) => s + i.qty, 0); }
+function getCartTotal() { return state.cart.reduce((s, i) => s + (Number(i.price) || 0) * (i.qty || 0), 0); }
+function getCartCount() { return state.cart.reduce((s, i) => s + (i.qty || 0), 0); }
+
+/** Sync state.cart from API cart response. */
+function setCartFromApiResponse(data) {
+  if (!data || !Array.isArray(data.items)) { state.cart = []; return; }
+  state.cart = data.items.map(i => {
+    const p = i.product ? apiProductToUI(i.product) : null;
+    if (!p) return null;
+    return { ...p, qty: i.quantity || 1 };
+  }).filter(Boolean);
+  updateCartUI();
+  if (state.currentPage === 'cart') renderCart();
+}
 
 function addToCart(productId, qty = 1) {
-  const product = PRODUCTS.find(p => p.id === productId);
-  if (!product) return;
-  const existing = state.cart.find(i => i.id === productId);
-  if (existing) existing.qty += qty;
-  else state.cart.push({ ...product, qty });
-  updateCartUI();
-  showToast(`${product.name} added to cart`, 'success');
+  const product = state.products.find(p => p.id === Number(productId));
+  if (!product) { showToast('Product not found', 'error'); return; }
+  if (state.currentUser && state.currentUser.role === 'customer') {
+    addOrUpdateCartItem(productId, qty).then(data => {
+      setCartFromApiResponse(data);
+      showToast(`${product.name} added to cart`, 'success');
+    }).catch(err => showToast(apiErrorMessage(err, 'Could not add to cart'), 'error'));
+    return;
+  }
+  if (state.currentUser && state.currentUser.role === 'producer') {
+    showToast('Producers use the dashboard to manage orders', '');
+    return;
+  }
+  showToast('Please log in to add to cart', 'error');
+  navigate('login');
 }
 
 function removeFromCart(productId) {
-  state.cart = state.cart.filter(i => i.id !== productId);
-  updateCartUI(); renderCart();
+  if (state.currentUser && state.currentUser.role === 'customer') {
+    removeCartItem(productId).then(data => { setCartFromApiResponse(data); }).catch(err => showToast(apiErrorMessage(err, 'Could not update cart'), 'error'));
+    return;
+  }
+  state.cart = state.cart.filter(i => i.id !== Number(productId));
+  updateCartUI();
+  renderCart();
 }
 
 function updateQty(productId, delta) {
-  const item = state.cart.find(i => i.id === productId);
+  const item = state.cart.find(i => i.id === Number(productId));
   if (!item) return;
-  item.qty = Math.max(1, item.qty + delta);
-  updateCartUI(); renderCart();
+  const newQty = Math.max(1, (item.qty || 0) + delta);
+  if (state.currentUser && state.currentUser.role === 'customer') {
+    addOrUpdateCartItem(productId, newQty).then(data => { setCartFromApiResponse(data); }).catch(err => showToast(apiErrorMessage(err, 'Could not update quantity'), 'error'));
+    return;
+  }
+  item.qty = newQty;
+  updateCartUI();
+  renderCart();
 }
 
 function updateCartUI() {
@@ -233,11 +155,27 @@ function showToast(msg, type = '') {
   setTimeout(() => { t.style.animation = 'fadeOutToast 0.3s ease forwards'; setTimeout(() => t.remove(), 300); }, 3200);
 }
 
+/** Never show raw "Failed to fetch" — use friendly message for network errors. */
+function apiErrorMessage(err, fallback) {
+  const msg = err && err.message ? err.message : fallback || 'Something went wrong.';
+  if (msg === 'Failed to fetch' || (err && err.status === undefined && !err.body)) {
+    return 'Network error. Please check the backend is running and try again.';
+  }
+  return msg;
+}
+
 // ---- NAVIGATION ----
 function navigate(page, extra) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  const target = document.getElementById(`page-${page}`);
-  if (target) target.classList.add('active');
+  const target = document.getElementById('page-' + page);
+  if (!target) {
+    var fallback = document.getElementById('page-home');
+    if (fallback) fallback.classList.add('active');
+    state.currentPage = 'home';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  target.classList.add('active');
   state.currentPage = page;
   document.querySelectorAll('.nav-link').forEach(l => l.classList.toggle('active', l.dataset.page === page));
   if (page === 'browse')        renderBrowse();
@@ -250,22 +188,24 @@ function navigate(page, extra) {
 
 // ---- BROWSE ----
 function getFiltered() {
-  return PRODUCTS.filter(p => {
-    const catMatch = state.currentCategory === 'all' || p.category === state.currentCategory;
-    const q = state.searchQuery.toLowerCase();
-    const sMatch = !q || p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q) || p.producer.toLowerCase().includes(q);
+  const list = state.products || [];
+  return list.filter(p => {
+    const catMatch = state.currentCategory === 'all' || p.category === state.currentCategory || String(p.category) === String(state.currentCategory);
+    const q = (state.searchQuery || '').toLowerCase();
+    const sMatch = !q || (p.name || '').toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q) || (p.producer || '').toLowerCase().includes(q);
     return catMatch && sMatch;
   });
 }
 
 function productCardHTML(p) {
-  const allergenHTML = p.allergens.length
-    ? p.allergens.map(a => `<span class="allergen-chip">⚠ ${a}</span>`).join('')
+  const allergens = p.allergens || [];
+  const allergenHTML = allergens.length
+    ? allergens.map(a => `<span class="allergen-chip">⚠ ${a}</span>`).join('')
     : `<span class="no-allergen">No common allergens</span>`;
 
   const badges = [];
   if (p.organic) badges.push(`<span class="badge badge-organic">Organic</span>`);
-  badges.push(`<span class="badge badge-season">${p.availability}</span>`);
+  badges.push(`<span class="badge badge-season">${p.availability || 'Available'}</span>`);
 
   return `
     <div class="product-card" onclick="navigate('product', ${p.id})">
@@ -295,11 +235,12 @@ function productCardHTML(p) {
 }
 
 function renderBrowse() {
+  const cats = state.categories || [];
   const catGrid = document.getElementById('category-grid');
   if (catGrid) {
-    catGrid.innerHTML = CATEGORIES.map(c => `
-      <div class="category-card ${c.id === state.currentCategory ? 'active' : ''}" onclick="setCategory('${c.id}')">
-        <div class="cat-img"><img src="${c.img}" alt="${c.name}" loading="lazy" /></div>
+    catGrid.innerHTML = cats.map(c => `
+      <div class="category-card ${c.id === state.currentCategory || String(c.id) === String(state.currentCategory) ? 'active' : ''}" onclick="setCategory('${c.id}')">
+        <div class="cat-img"><img src="${c.img || 'images/vegetables.jpg'}" alt="${c.name}" loading="lazy" /></div>
         <div class="cat-info"><h4>${c.name}</h4><span>${c.count} products</span></div>
       </div>`).join('');
   }
@@ -322,21 +263,35 @@ function setCategory(id) {
 
 // ---- PRODUCT DETAIL ----
 function renderProductDetail(productId) {
-  const p = PRODUCTS.find(x => x.id === productId);
-  if (!p) return;
-  state.currentProduct = p;
+  const contentEl = document.getElementById('product-detail-content');
+  if (!contentEl) return;
+  contentEl.innerHTML = '<p class="loading-msg">Loading…</p>';
 
-  const allergenSection = p.allergens.length
-    ? `<div class="allergen-warning">
-         <h4>⚠ Allergen Information — Contains:</h4>
-         <div class="allergen-row">${p.allergens.map(a => `<span class="allergen-chip">⚠ ${a}</span>`).join('')}</div>
-       </div>`
-    : `<div class="detail-block"><h4>Allergen Information</h4>
-       <p style="font-size:15px;font-weight:600;color:var(--forest-mid)">✓ No common allergens declared</p></div>`;
+  (async () => {
+    let p = state.products.find(x => x.id === Number(productId));
+    if (!p) {
+      try {
+        const api = await getProduct(productId);
+        p = apiProductToUI(api);
+      } catch (err) {
+        contentEl.innerHTML = `<div class="no-results"><h3>Product not found</h3><p>${apiErrorMessage(err, 'Please try again.')}</p><button class="btn btn-primary" onclick="navigate('browse')">Back to Marketplace</button></div>`;
+        return;
+      }
+    }
+    state.currentProduct = p;
 
-  const catName = CATEGORIES.find(c => c.id === p.category)?.name || 'Products';
+    const allergens = p.allergens || [];
+    const allergenSection = allergens.length
+      ? `<div class="allergen-warning">
+           <h4>⚠ Allergen Information — Contains:</h4>
+           <div class="allergen-row">${allergens.map(a => `<span class="allergen-chip">⚠ ${a}</span>`).join('')}</div>
+         </div>`
+      : `<div class="detail-block"><h4>Allergen Information</h4>
+         <p style="font-size:15px;font-weight:600;color:var(--forest-mid)">✓ No common allergens declared</p></div>`;
 
-  document.getElementById('product-detail-content').innerHTML = `
+    const catName = p.category_name || state.categories.find(c => c.id === p.category)?.name || 'Products';
+
+  const html = `
     <div class="product-detail-layout">
       <div class="product-detail-img">
         <img src="${p.img}" alt="${p.name}" />
@@ -367,7 +322,7 @@ function renderProductDetail(productId) {
         <div class="detail-grid" style="margin-bottom:20px">
           <div class="detail-item"><h4>Stock</h4><p>${p.stock} ${p.unit}s available</p></div>
           <div class="detail-item"><h4>Certified Organic</h4><p>${p.organic ? '✓ Yes' : 'Conventional'}</p></div>
-          <div class="detail-item"><h4>Harvest Date</h4><p>${p.harvestDate}</p></div>
+          <div class="detail-item"><h4>Harvest Date</h4><p>${p.harvestDate || '—'}</p></div>
           <div class="detail-item"><h4>Food Miles</h4><p>~${Math.floor(Math.random()*14)+2} miles</p></div>
         </div>
         ${allergenSection}
@@ -381,6 +336,8 @@ function renderProductDetail(productId) {
         </div>
       </div>
     </div>`;
+    contentEl.innerHTML = html;
+  })();
 }
 
 let detailQty = 1;
@@ -429,14 +386,14 @@ function renderCart() {
           <div class="cart-item-img"><img src="${item.img}" alt="${item.name}" /></div>
           <div class="cart-item-info">
             <div class="cart-item-name">${item.name}</div>
-            <div class="cart-item-unit">£${item.price.toFixed(2)} / ${item.unit}</div>
+            <div class="cart-item-unit">£${Number(item.price).toFixed(2)} / ${item.unit || 'unit'}</div>
           </div>
           <div class="qty-control">
             <button class="qty-btn" onclick="updateQty(${item.id},-1)">−</button>
             <span class="qty-val">${item.qty}</span>
             <button class="qty-btn" onclick="updateQty(${item.id},1)">+</button>
           </div>
-          <div class="cart-item-price">£${(item.price*item.qty).toFixed(2)}</div>
+          <div class="cart-item-price">£${(Number(item.price) * (item.qty || 0)).toFixed(2)}</div>
           <button class="remove-btn" onclick="removeFromCart(${item.id})">✕</button>
         </div>`).join('')}
     </div>`).join('');
@@ -480,7 +437,7 @@ function renderAuthNavbar() {
         <div class="user-avatar">${initials}</div>
         <span class="user-name">${state.currentUser.name.split(' ')[0]}</span>
       </div>
-      <button class="btn btn-secondary btn-sm" onclick="logout()">Log out</button>`;
+      <button class="btn btn-secondary btn-sm" onclick="handleLogout()">Log out</button>`;
   } else {
     el.innerHTML = `
       <button class="cart-btn" onclick="navigate('cart')">
@@ -494,7 +451,18 @@ function renderAuthNavbar() {
   updateCartUI();
 }
 
-function logout() { state.currentUser = null; renderAuthNavbar(); navigate('home'); showToast('Logged out successfully', ''); }
+function handleLogout() {
+  (typeof logout !== 'undefined' ? logout() : Promise.resolve())
+    .catch(() => {})
+    .finally(() => {
+      state.currentUser = null;
+      state.cart = [];
+      renderAuthNavbar();
+      updateCartUI();
+      navigate('home');
+      showToast('Logged out successfully', '');
+    });
+}
 
 // ---- REGISTER ----
 let registerRole = 'producer';
@@ -505,17 +473,26 @@ function setRegisterRole(role) {
   document.getElementById('producer-fields').classList.toggle('hidden', role !== 'producer');
   document.getElementById('customer-fields').classList.toggle('hidden', role !== 'customer');
   document.getElementById('terms-row').classList.toggle('hidden', role !== 'customer');
+  document.getElementById('producer-name-row').classList.toggle('hidden', role !== 'producer');
 }
 
 function handleRegister(e) {
   e.preventDefault();
   const name = document.getElementById('reg-name').value.trim();
+  const firstName = document.getElementById('reg-first-name')?.value?.trim() ?? '';
+  const lastName = document.getElementById('reg-last-name')?.value?.trim() ?? '';
   const email = document.getElementById('reg-email').value.trim();
   const password = document.getElementById('reg-password').value;
   const confirm = document.getElementById('reg-confirm').value;
   let valid = true;
 
-  if (!name)            { showFieldError('reg-name', 'Name is required'); valid = false; } else clearFieldError('reg-name');
+  if (registerRole === 'producer') {
+    if (!name) { showFieldError('reg-name', 'Contact name is required'); valid = false; } else clearFieldError('reg-name');
+  } else {
+    clearFieldError('reg-name');
+    if (!firstName) { showFieldError('reg-first-name', 'First name is required'); valid = false; } else clearFieldError('reg-first-name');
+    if (!lastName) { showFieldError('reg-last-name', 'Last name is required'); valid = false; } else clearFieldError('reg-last-name');
+  }
   if (!email.includes('@')) { showFieldError('reg-email', 'Valid email required'); valid = false; } else clearFieldError('reg-email');
   if (password.length < 8) { showFieldError('reg-password', 'Password must be at least 8 characters'); valid = false; } else clearFieldError('reg-password');
   if (password !== confirm)  { showFieldError('reg-confirm', 'Passwords do not match'); valid = false; } else clearFieldError('reg-confirm');
@@ -526,13 +503,49 @@ function handleRegister(e) {
   }
   if (!valid) return;
 
-  state.currentUser = {
-    name, email, role: registerRole,
-    businessName: registerRole === 'producer' ? document.getElementById('reg-business')?.value : null,
-  };
-  renderAuthNavbar();
-  showToast(`Welcome, ${name.split(' ')[0]}! Account created.`, 'success');
-  navigate(registerRole === 'producer' ? 'producer-dash' : 'customer-dash');
+  const doRegister = registerRole === 'producer'
+    ? () => registerProducer({
+        email,
+        password,
+        password_confirm: confirm,
+        business_name: document.getElementById('reg-business')?.value?.trim() || name,
+        contact_name: name,
+        phone_number: document.getElementById('reg-phone')?.value?.trim() || '',
+        address: document.getElementById('reg-address')?.value?.trim() || '—',
+        postcode: document.getElementById('reg-postcode')?.value?.trim() || '—',
+      })
+    : () => registerCustomer({
+        email,
+        password,
+        password_confirm: confirm,
+        first_name: firstName,
+        last_name: lastName,
+        phone_number: document.getElementById('reg-phone')?.value?.trim() || '',
+        delivery_address: document.getElementById('reg-delivery')?.value?.trim() || '—',
+        postcode: document.getElementById('reg-postcode')?.value?.trim() || '—',
+        terms_accepted: true,
+      });
+
+  doRegister()
+    .then(profile => login(email, password).then(() => profile))
+    .then(profile => {
+      state.currentUser = profileToUser(profile);
+      renderAuthNavbar();
+      showToast(`Welcome, ${state.currentUser.name.split(' ')[0]}! Account created.`, 'success');
+      navigate(state.currentUser.role === 'producer' ? 'producer-dash' : 'customer-dash');
+      if (state.currentUser.role === 'customer') getCart().then(setCartFromApiResponse).catch(() => {});
+    })
+    .catch(err => {
+      const msg = err.status && err.body
+        ? (err.message || 'Registration failed. Please check your details.')
+        : apiErrorMessage(err, 'Registration failed. Check the backend is running and try again.');
+      showToast(msg, 'error');
+      const fieldErrors = typeof getFieldErrors === 'function' && err.body ? getFieldErrors(err.body) : {};
+      Object.keys(fieldErrors).forEach(f => {
+        const id = 'reg-' + f.replace(/_/g, '-');
+        showFieldError(id, fieldErrors[f]);
+      });
+    });
 }
 
 // ---- LOGIN ----
@@ -541,16 +554,17 @@ function handleLogin(e) {
   const email = document.getElementById('login-email').value.trim();
   const password = document.getElementById('login-password').value;
   if (!email || !password) { showToast('Please enter your email and password', 'error'); return; }
-  if (!email.includes('@') || password.length < 4) { showToast('Invalid email or password', 'error'); return; }
+  if (!email.includes('@')) { showToast('Please enter a valid email', 'error'); return; }
 
-  const demos = {
-    'producer@example.com': { name: 'Jane Smith', role: 'producer', businessName: 'Bristol Valley Farm' },
-    'customer@example.com': { name: 'Robert Johnson', role: 'customer' },
-  };
-  state.currentUser = demos[email] || { name: email.split('@')[0], role: 'customer' };
-  renderAuthNavbar();
-  showToast(`Welcome back, ${state.currentUser.name.split(' ')[0]}!`, 'success');
-  navigate(state.currentUser.role === 'producer' ? 'producer-dash' : 'customer-dash');
+  login(email, password)
+    .then(profile => {
+      state.currentUser = profileToUser(profile);
+      renderAuthNavbar();
+      showToast(`Welcome back, ${state.currentUser.name.split(' ')[0]}!`, 'success');
+      navigate(state.currentUser.role === 'producer' ? 'producer-dash' : 'customer-dash');
+      if (state.currentUser.role === 'customer') getCart().then(setCartFromApiResponse).catch(() => {});
+    })
+    .catch(err => showToast(apiErrorMessage(err, 'Invalid email or password'), 'error'));
 }
 
 function showFieldError(id, msg) {
@@ -579,7 +593,8 @@ const MOCK_ORDERS = [
   { id: '#ORD-003', customer: "St Mary's School", date: '2026-02-12', delivery: '2026-02-19', items: 'Fresh Apples × 20kg, Carrots × 30kg', total: 98.00, status: 'Ready' },
 ];
 
-const MY_PRODUCTS = PRODUCTS.filter(p => p.producer === 'Bristol Valley Farm');
+// Producer's own products: backend does not yet filter by producer; show empty or all for demo
+const MY_PRODUCTS = [];
 
 function renderProducerDash() {
   document.querySelectorAll('#producer-sidebar li').forEach(li => li.classList.toggle('active', li.dataset.tab === state.producerDashTab));
@@ -601,7 +616,8 @@ function renderProducerDash() {
 
   const prodTable = document.getElementById('pdash-products-table');
   if (prodTable) {
-    prodTable.innerHTML = MY_PRODUCTS.map(p => `
+    const myProducts = state.products.length ? state.products : MY_PRODUCTS;
+    prodTable.innerHTML = myProducts.length ? myProducts.map(p => `
       <tr>
         <td><img src="${p.img}" style="width:36px;height:36px;border-radius:6px;object-fit:cover;margin-right:8px;vertical-align:middle" />${p.name}</td>
         <td>${p.category_name}</td>
@@ -609,49 +625,89 @@ function renderProducerDash() {
         <td>${p.stock} ${p.unit}s</td>
         <td><span class="status-pill status-confirmed">${p.availability}</span></td>
         <td><button class="btn btn-secondary btn-sm" onclick="showToast('Edit product — available with Sprint 2 API','')">Edit</button></td>
-      </tr>`).join('');
+      </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px">Your products will appear here. Add products via the backend or when producer-scoped listing is available.</td></tr>';
   }
 }
 
 function setProducerTab(tab) { state.producerDashTab = tab; renderProducerDash(); }
 
 // ---- CUSTOMER DASHBOARD ----
-const MOCK_CUSTOMER_ORDERS = [
-  { id: '#ORD-108', date: '2026-02-14', producers: 'Bristol Valley Farm', items: 'Organic Eggs × 2, Carrots × 3kg', total: 12.40, status: 'Confirmed' },
-  { id: '#ORD-095', date: '2026-02-07', producers: 'Hillside Dairy, Clifton Bakehouse', items: 'Milk × 4L, Sourdough × 1', total: 9.30, status: 'Delivered' },
-];
+// Customer orders: from API when available (Sprint 2); no mock data for new accounts
+const CUSTOMER_ORDERS = [];
 
 function renderCustomerDash() {
   document.querySelectorAll('#customer-sidebar li').forEach(li => li.classList.toggle('active', li.dataset.tab === state.customerDashTab));
   document.querySelectorAll('#customer-dash-content .dashboard-section').forEach(s => s.classList.toggle('active', s.id === `cdash-${state.customerDashTab}`));
 
+  // Show logged-in user name and email (sidebar + profile form)
+  if (state.currentUser) {
+    const nameEl = document.getElementById('cdash-user-name');
+    if (nameEl) nameEl.textContent = state.currentUser.name;
+    const avatarEl = document.getElementById('cdash-avatar');
+    if (avatarEl) avatarEl.textContent = state.currentUser.name.split(' ').map(w => w[0]).join('').toUpperCase().substring(0, 2) || '?';
+    const nameInput = document.getElementById('cdash-profile-name');
+    if (nameInput) nameInput.value = state.currentUser.name;
+    const emailInput = document.getElementById('cdash-profile-email');
+    if (emailInput) emailInput.value = state.currentUser.email;
+  }
+
   const ordTable = document.getElementById('cdash-orders-table');
   if (ordTable) {
-    ordTable.innerHTML = MOCK_CUSTOMER_ORDERS.map(o => `
-      <tr>
-        <td style="font-weight:600">${o.id}</td><td>${o.date}</td>
-        <td style="font-size:12px">${o.producers}</td>
-        <td style="font-size:12px">${o.items}</td>
-        <td style="font-weight:700">£${o.total.toFixed(2)}</td>
-        <td><span class="status-pill status-${o.status.toLowerCase()}">${o.status}</span></td>
-        <td><button class="btn btn-secondary btn-sm" onclick="showToast('Items added to cart!','success')">Reorder</button></td>
-      </tr>`).join('');
+    const orders = CUSTOMER_ORDERS || [];
+    if (orders.length === 0) {
+      ordTable.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted);font-size:15px">You haven’t placed any orders yet. When you checkout, your orders will appear here.</td></tr>';
+    } else {
+      ordTable.innerHTML = orders.map(o => `
+        <tr>
+          <td style="font-weight:600">${o.id}</td><td>${o.date}</td>
+          <td style="font-size:12px">${o.producers}</td>
+          <td style="font-size:12px">${o.items}</td>
+          <td style="font-weight:700">£${o.total.toFixed(2)}</td>
+          <td><span class="status-pill status-${(o.status || '').toLowerCase()}">${o.status}</span></td>
+          <td><button class="btn btn-secondary btn-sm" onclick="showToast('Items added to cart!','success')">Reorder</button></td>
+        </tr>`).join('');
+    }
   }
 }
 
 function setCustomerTab(tab) { state.customerDashTab = tab; renderCustomerDash(); }
 
 // ---- INIT ----
+function loadCatalog() {
+  return Promise.all([getCategories(), getProducts()])
+    .then(([cats, prods]) => {
+      state.products = (prods || []).map(apiProductToUI);
+      state.categories = buildCategoriesForUI(cats || [], state.products);
+      if (state.currentPage === 'browse') renderBrowse();
+      const grid = document.getElementById('home-featured-grid');
+      if (grid) grid.innerHTML = state.products.slice(0, 4).map(productCardHTML).join('');
+    })
+    .catch(() => {
+      state.products = [];
+      state.categories = buildCategoriesForUI([], []);
+      showToast('Could not load products. Check backend is running.', 'error');
+    });
+}
+
+function initAuthAndCart() {
+  getProfile()
+    .then(profile => {
+      state.currentUser = profileToUser(profile);
+      renderAuthNavbar();
+      if (state.currentUser.role === 'customer') return getCart().then(setCartFromApiResponse);
+    })
+    .catch(() => { state.currentUser = null; renderAuthNavbar(); })
+    .finally(() => updateCartUI());
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   renderAuthNavbar();
   navigate('home');
+  loadCatalog();
+  initAuthAndCart();
+
   const searchInput = document.getElementById('search-input');
   if (searchInput) searchInput.addEventListener('input', e => { state.searchQuery = e.target.value; if (state.currentPage === 'browse') renderBrowse(); });
   const pwInput = document.getElementById('reg-password');
   if (pwInput) pwInput.addEventListener('input', () => checkPasswordStrength(pwInput.value));
-
-  // Render featured products on home
-  const featured = PRODUCTS.filter(p => p.availability === 'In Season').slice(0, 4);
-  const grid = document.getElementById('home-featured-grid');
-  if (grid) grid.innerHTML = featured.map(productCardHTML).join('');
 });

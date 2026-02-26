@@ -76,7 +76,9 @@ Open a **new terminal window** (keep the containers running) and run:
 docker exec brfn_backend python manage.py migrate
 ```
 
-This creates the database tables. You only need to do this once, or whenever new migrations are added.
+This creates the database tables (including `users_user`). You only need to do this once, or whenever new migrations are added.
+
+**Important:** Run this command **inside Docker** (as above). If you run `python manage.py migrate` on your host machine, you'll get "ModuleNotFoundError: No module named 'rest_framework'" because the Python dependencies are installed in the container, not locally.
 
 ### 5. Create a Superuser (Optional)
 
@@ -92,11 +94,51 @@ Follow the prompts to set a username, email, and password.
 
 ## Accessing the Application
 
-| Service          | URL                          | Description                        |
-|------------------|------------------------------|------------------------------------|
-| Django Backend   | http://localhost:8000        | API and backend application        |
-| Django Admin     | http://localhost:8000/admin/ | Admin panel (requires superuser)   |
-| React Frontend   | http://localhost:3000        | Customer-facing marketplace UI     |
+When using Docker Compose, ports are mapped as below (backend 8025, frontend 3025):
+
+| Service          | URL                            | Description                        |
+|------------------|--------------------------------|------------------------------------|
+| Django Backend   | http://localhost:8025          | API and backend application        |
+| Django Admin     | http://localhost:8025/admin/   | Admin panel (requires superuser)   |
+| Frontend         | http://localhost:3025          | Customer-facing marketplace UI     |
+
+**Check the backend is running:** open http://localhost:8025/healthz/ in your browser — you should see a simple response. If that fails, the frontend will show "Network error" or "backend not working" when you log in or register.
+
+---
+
+## Troubleshooting: "Backend not working" / net::ERR_FAILED
+
+If you see **"Network error. Please check the backend is running"** or the browser console shows **`POST http://localhost:8025/... net::ERR_FAILED`**:
+
+1. **Start all services** (from the project root):
+   ```bash
+   docker-compose up --build
+   ```
+   Wait until you see `Starting development server at http://0.0.0.0:8000/` from the backend.
+
+2. **Check the backend is reachable:** open **http://localhost:8025/healthz/** in your browser. If it loads, the backend is running and the frontend should be able to call it.
+
+3. **Running the backend without Docker?** If you run Django with `python manage.py runserver`, it listens on **port 8000**. The frontend defaults to **8025**. Either:
+   - Run the backend on 8025: `python manage.py runserver 8025`, or
+   - Point the frontend at 8000: in `frontend/index.html` (in `<head>`), add:
+     ```html
+     <meta name="brfn-api-base" content="http://localhost:8000" />
+     ```
+     The app reads this and uses it as the API base URL.
+
+4. **Containers not running?** Run `docker-compose ps` and ensure `brfn_backend` is Up. If it exited, run `docker-compose logs backend` to see errors.
+
+5. **Open the frontend via HTTP, not as a file.** Use **http://localhost:3025** in the browser (with Docker running). Do not open `index.html` directly from the file system (`file:///...`) — that can cause CORS/security errors and `net::ERR_FAILED` when calling the API.
+
+6. **After changing backend settings** (e.g. CORS/CSRF), restart the backend: `docker-compose restart backend`, then hard-refresh the frontend (Ctrl+Shift+R).
+
+7. **"InconsistentMigrationHistory" when migrating** (e.g. *admin.0001_initial is applied before its dependency users.0001_initial*): the database migration history is out of order. **Reset the database** (this deletes all data) and run migrations from scratch:
+   ```bash
+   docker-compose down -v
+   docker-compose up -d
+   docker exec brfn_backend python manage.py migrate
+   ```
+   Then create a superuser again if you need one: `docker exec -it brfn_backend python manage.py createsuperuser`
 
 ---
 

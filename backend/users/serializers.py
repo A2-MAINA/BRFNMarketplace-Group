@@ -42,9 +42,8 @@ class ProducerRegisterSerializer(serializers.Serializer):
 
         user = User.objects.create_user(
             email=validated_data["email"],
-            username=validated_data["email"],
-            role="producer",
             password=password,
+            role="producer",
         )
 
         ProducerProfile.objects.create(
@@ -67,7 +66,8 @@ class CustomerRegisterSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True)
     password_confirm = serializers.CharField(write_only=True)
 
-    full_name = serializers.CharField()
+    first_name = serializers.CharField()
+    last_name = serializers.CharField()
     phone_number = serializers.CharField(allow_blank=True, required=False)
     delivery_address = serializers.CharField()
     postcode = serializers.CharField()
@@ -94,14 +94,16 @@ class CustomerRegisterSerializer(serializers.Serializer):
 
         user = User.objects.create_user(
             email=validated_data["email"],
-            username=validated_data["email"],
-            role="customer",
             password=password,
+            role="customer",
+            first_name=validated_data["first_name"].strip(),
+            last_name=validated_data["last_name"].strip(),
         )
 
+        full_name = f"{validated_data['first_name'].strip()} {validated_data['last_name'].strip()}".strip()
         CustomerProfile.objects.create(
             user=user,
-            full_name=validated_data["full_name"],
+            full_name=full_name,
             phone_number=validated_data.get("phone_number", ""),
             delivery_address=validated_data["delivery_address"],
             postcode=validated_data["postcode"],
@@ -130,8 +132,30 @@ class LoginSerializer(serializers.Serializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     # Eugene Dalla — Backend API: profile payload for frontend
     role = serializers.CharField(read_only=True)
+    # Display name from role-specific profile (customer full_name, producer contact_name)
+    name = serializers.SerializerMethodField()
+    business_name = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ["id", "email", "role", "first_name", "last_name"]
+        fields = ["id", "email", "role", "first_name", "last_name", "name", "business_name"]
+
+    def get_name(self, user):
+        if user.role == "customer":
+            # Prefer User.first_name/last_name (DB columns); fallback to profile.full_name for legacy
+            full = " ".join(p for p in [user.first_name, user.last_name] if p).strip()
+            if full:
+                return full
+            if hasattr(user, "customer_profile"):
+                return user.customer_profile.full_name
+            return user.email
+        if user.role == "producer" and hasattr(user, "producer_profile"):
+            return user.producer_profile.contact_name
+        parts = [user.first_name, user.last_name]
+        return " ".join(p for p in parts if p).strip() or user.email
+
+    def get_business_name(self, user):
+        if user.role == "producer" and hasattr(user, "producer_profile"):
+            return user.producer_profile.business_name
+        return None
 

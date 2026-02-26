@@ -13,10 +13,12 @@ from .serializers import (
 
 
 # Eugene Dalla — Backend API & Business Logic: auth endpoints
+# CSRF exempt in urls.py; DRF uses SessionAuthenticationNoCSRF so no CSRF required
 
 
 class ProducerRegisterView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []  # no auth for register
 
     def post(self, request):
         serializer = ProducerRegisterSerializer(data=request.data)
@@ -29,6 +31,7 @@ class ProducerRegisterView(APIView):
 
 class CustomerRegisterView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []  # no auth for register
 
     def post(self, request):
         serializer = CustomerRegisterSerializer(data=request.data)
@@ -41,6 +44,7 @@ class CustomerRegisterView(APIView):
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []  # no auth before login
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data)

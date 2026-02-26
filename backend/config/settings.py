@@ -80,8 +80,21 @@ TEMPLATES = [
     },
 ]
 
-# CORS configuration
-CORS_ALLOW_ALL_ORIGINS = True  # Restrict to specific domains in production
+# CORS configuration (frontend on 3025, backend on 8025 = cross-origin)
+# When using credentials: 'include', browser requires Access-Control-Allow-Credentials: true
+# and a specific Allow-Origin (not *), so we list frontend origins explicitly.
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGINS = [
+    'http://localhost:3025',
+    'http://127.0.0.1:3025',
+]
+CORS_ALLOW_CREDENTIALS = True
+
+# Allow POST from frontend origin without CSRF token (same host, different port = cross-origin)
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:3025',
+    'http://127.0.0.1:3025',
+]
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
@@ -140,6 +153,13 @@ STATIC_URL = 'static/'
 
 # Custom User Model
 AUTH_USER_MODEL = 'users.User'
+
+# DRF: session auth without CSRF so SPA (different origin) can login/register/logout
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'config.auth.SessionAuthenticationNoCSRF',
+    ],
+}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
