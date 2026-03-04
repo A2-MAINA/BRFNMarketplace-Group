@@ -77,7 +77,8 @@ const state = {
   producerDashTab: 'overview',
   customerDashTab: 'orders',
   categories: [],   // UI categories (All + from API)
-  products: [],     // Products from API (normalized)
+  products: [],     // All products from API (normalized)
+  producerProducts: [], // Products belonging to logged-in producer
 };
 
 // ---- CART ----
@@ -533,7 +534,13 @@ function handleRegister(e) {
       renderAuthNavbar();
       showToast(`Welcome, ${state.currentUser.name.split(' ')[0]}! Account created.`, 'success');
       navigate(state.currentUser.role === 'producer' ? 'producer-dash' : 'customer-dash');
-      if (state.currentUser.role === 'customer') getCart().then(setCartFromApiResponse).catch(() => {});
+      if (state.currentUser.role === 'customer') {
+        getCart().then(setCartFromApiResponse).catch(() => {});
+      } else if (state.currentUser.role === 'producer') {
+        getProducts({ mine: true })
+          .then(prods => { state.producerProducts = (prods || []).map(apiProductToUI); renderProducerDash(); })
+          .catch(() => { state.producerProducts = []; renderProducerDash(); });
+      }
     })
     .catch(err => {
       const msg = err.status && err.body
@@ -562,7 +569,13 @@ function handleLogin(e) {
       renderAuthNavbar();
       showToast(`Welcome back, ${state.currentUser.name.split(' ')[0]}!`, 'success');
       navigate(state.currentUser.role === 'producer' ? 'producer-dash' : 'customer-dash');
-      if (state.currentUser.role === 'customer') getCart().then(setCartFromApiResponse).catch(() => {});
+      if (state.currentUser.role === 'customer') {
+        getCart().then(setCartFromApiResponse).catch(() => {});
+      } else if (state.currentUser.role === 'producer') {
+        getProducts({ mine: true })
+          .then(prods => { state.producerProducts = (prods || []).map(apiProductToUI); renderProducerDash(); })
+          .catch(() => { state.producerProducts = []; renderProducerDash(); });
+      }
     })
     .catch(err => showToast(apiErrorMessage(err, 'Invalid email or password'), 'error'));
 }
@@ -587,13 +600,10 @@ function checkPasswordStrength(pw) {
 }
 
 // ---- PRODUCER DASHBOARD ----
-const MOCK_ORDERS = [
-  { id: '#ORD-001', customer: 'Robert Johnson', date: '2026-02-15', delivery: '2026-02-17', items: 'Organic Eggs × 3, Carrots × 2kg', total: 14.10, status: 'Confirmed' },
-  { id: '#ORD-002', customer: 'Sarah Williams', date: '2026-02-14', delivery: '2026-02-18', items: 'Organic Eggs × 5', total: 17.50, status: 'Pending' },
-  { id: '#ORD-003', customer: "St Mary's School", date: '2026-02-12', delivery: '2026-02-19', items: 'Fresh Apples × 20kg, Carrots × 30kg', total: 98.00, status: 'Ready' },
-];
+// Orders: real API wiring is Sprint 2; for Sprint 1 show an empty state (no fake orders).
+const MOCK_ORDERS = [];
 
-// Producer's own products: backend does not yet filter by producer; show empty or all for demo
+// Producer's own products: backend does not yet filter by producer; show all products for now
 const MY_PRODUCTS = [];
 
 function renderProducerDash() {
@@ -603,20 +613,26 @@ function renderProducerDash() {
   const nameEl = document.getElementById('pdash-user-name'); if (nameEl && state.currentUser) nameEl.textContent = state.currentUser.name;
   const bizEl  = document.getElementById('pdash-biz-name');  if (bizEl && state.currentUser)  bizEl.textContent  = state.currentUser.businessName || 'My Farm';
 
-  const ordersHTML = MOCK_ORDERS.map(o => `
-    <tr>
-      <td style="font-weight:600">${o.id}</td><td>${o.customer}</td>
-      <td>${o.date}</td><td>${o.delivery}</td>
-      <td style="font-size:12px;max-width:160px">${o.items}</td>
-      <td style="font-weight:700">£${o.total.toFixed(2)}</td>
-      <td><span class="status-pill status-${o.status.toLowerCase()}">${o.status}</span></td>
-    </tr>`).join('');
+  // Overview stats: start empty / zero per producer for Sprint 1
+  const listedCount = state.producerProducts.length;
+  const listedEl = document.getElementById('pdash-listed-products');
+  if (listedEl) listedEl.textContent = String(listedCount);
+  const activeOrdersEl = document.getElementById('pdash-active-orders');
+  if (activeOrdersEl) activeOrdersEl.textContent = '0';
+  const weeklyRevenueEl = document.getElementById('pdash-weekly-revenue');
+  if (weeklyRevenueEl) weeklyRevenueEl.textContent = '£0.00';
 
-  document.querySelectorAll('.pdash-orders-tbody').forEach(el => { if(el) el.innerHTML = ordersHTML; });
+  const ordersBody = `
+    <tr>
+      <td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted);font-size:14px">
+        You haven’t received any orders yet. When customers checkout, their orders will appear here.
+      </td>
+    </tr>`;
+  document.querySelectorAll('.pdash-orders-tbody').forEach(el => { if (el) el.innerHTML = ordersBody; });
 
   const prodTable = document.getElementById('pdash-products-table');
   if (prodTable) {
-    const myProducts = state.products.length ? state.products : MY_PRODUCTS;
+    const myProducts = state.producerProducts.length ? state.producerProducts : [];
     prodTable.innerHTML = myProducts.length ? myProducts.map(p => `
       <tr>
         <td><img src="${p.img}" style="width:36px;height:36px;border-radius:6px;object-fit:cover;margin-right:8px;vertical-align:middle" />${p.name}</td>
@@ -625,8 +641,105 @@ function renderProducerDash() {
         <td>${p.stock} ${p.unit}s</td>
         <td><span class="status-pill status-confirmed">${p.availability}</span></td>
         <td><button class="btn btn-secondary btn-sm" onclick="showToast('Edit product — available with Sprint 2 API','')">Edit</button></td>
-      </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px">Your products will appear here. Add products via the backend or when producer-scoped listing is available.</td></tr>';
+      </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px">Your products will appear here. Add products via the form below.</td></tr>';
   }
+
+  // Populate Add Product category dropdown from API categories (numeric ids)
+  const catSelect = document.getElementById('prod-category');
+  if (catSelect) {
+    const apiCategories = (state.categories || []).filter(c => c.id !== 'all');
+    if (apiCategories.length > 0) {
+      catSelect.innerHTML = '<option value="">Select category</option>';
+      apiCategories.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.name;
+        catSelect.appendChild(opt);
+      });
+    } else {
+      // state.categories not loaded yet or empty — fetch categories directly
+      catSelect.innerHTML = '<option value="">Loading categories…</option>';
+      getCategories()
+        .then(cats => {
+          if (!cats || !cats.length) {
+            catSelect.innerHTML = '<option value="">No categories yet — add some in admin</option>';
+            return;
+          }
+          catSelect.innerHTML = '<option value="">Select category</option>';
+          cats.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.id;
+            opt.textContent = c.name;
+            catSelect.appendChild(opt);
+          });
+          state.categories = buildCategoriesForUI(cats, state.products || []);
+        })
+        .catch(() => {
+          catSelect.innerHTML = '<option value="">Could not load categories</option>';
+        });
+    }
+  }
+}
+
+function handleAddProduct(e) {
+  e.preventDefault();
+  const name = document.getElementById('prod-name')?.value?.trim() ?? '';
+  const categoryVal = document.getElementById('prod-category')?.value ?? '';
+  const description = document.getElementById('prod-desc')?.value?.trim() ?? '';
+  const priceVal = document.getElementById('prod-price')?.value?.trim() ?? '';
+  const stockVal = document.getElementById('prod-stock')?.value?.trim() ?? '';
+  const imageUrl = document.getElementById('prod-image-url')?.value?.trim() ?? '';
+
+  ['prod-name', 'prod-category', 'prod-price', 'prod-stock'].forEach(clearFieldError);
+  let valid = true;
+  if (!name) { showFieldError('prod-name', 'Product name is required'); valid = false; }
+  const categoryId = categoryVal ? parseInt(categoryVal, 10) : NaN;
+  if (!categoryVal || isNaN(categoryId)) { showFieldError('prod-category', 'Please select a category'); valid = false; }
+  const price = priceVal ? parseFloat(priceVal) : NaN;
+  if (priceVal === '' || isNaN(price) || price < 0) { showFieldError('prod-price', 'Enter a valid price (0 or more)'); valid = false; }
+  const stock = stockVal !== '' ? parseInt(stockVal, 10) : NaN;
+  if (stockVal === '' || isNaN(stock) || stock < 0) { showFieldError('prod-stock', 'Enter a valid stock quantity (0 or more)'); valid = false; }
+  if (!valid) return;
+
+  if (!state.currentUser || state.currentUser.role !== 'producer') {
+    showToast('You must be logged in as a producer to add products.', 'error');
+    return;
+  }
+
+  createProduct({
+    name,
+    description: description || '',
+    price: price,
+    category: categoryId,
+    stock: isNaN(stock) ? 0 : stock,
+    image_url: imageUrl || '',
+  })
+    .then(() => Promise.all([
+      loadCatalog(),
+      getProducts({ mine: true }),
+    ]))
+    .then(([, myProds]) => {
+      state.producerProducts = (myProds || []).map(apiProductToUI);
+      showToast('Product listed successfully.', 'success');
+      state.producerDashTab = 'products';
+      renderProducerDash();
+      document.getElementById('prod-name').value = '';
+      document.getElementById('prod-category').value = '';
+      document.getElementById('prod-desc').value = '';
+      document.getElementById('prod-price').value = '';
+      document.getElementById('prod-stock').value = '';
+      const imgEl = document.getElementById('prod-image-url');
+      if (imgEl) imgEl.value = '';
+    })
+    .catch(err => {
+      showToast(apiErrorMessage(err, 'Could not add product. Check the backend and try again.'), 'error');
+      const fieldErrors = typeof getFieldErrors === 'function' && err.body ? getFieldErrors(err.body) : {};
+      const map = { name: 'prod-name', category: 'prod-category', price: 'prod-price', stock: 'prod-stock', description: 'prod-desc' };
+      Object.keys(fieldErrors).forEach(f => {
+        const id = map[f];
+        if (id) showFieldError(id, fieldErrors[f]);
+      });
+    });
 }
 
 function setProducerTab(tab) { state.producerDashTab = tab; renderProducerDash(); }

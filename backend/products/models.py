@@ -1,4 +1,4 @@
-# Import Django's model field types
+from django.conf import settings
 from django.db import models
 
 
@@ -24,6 +24,14 @@ class Product(models.Model):
     image_url = models.URLField(blank=True, default='')
     stock = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Producer that owns this product (used for "My Products" view)
+    producer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='products',
+        null=True,
+        blank=True,
+    )
 
     def __str__(self):
         return self.name

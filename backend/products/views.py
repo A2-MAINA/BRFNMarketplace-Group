@@ -18,10 +18,24 @@ class ProductListCreateView(generics.ListCreateAPIView):
             return [IsProducer()]
         return [AllowAny()]
 
+    def perform_create(self, serializer):
+        """
+        When a producer creates a product, store who owns it.
+        """
+        user = self.request.user
+        serializer.save(producer=user)
+
     def get_queryset(self):
         qs = Product.objects.all().order_by("-created_at")
         category_id = self.request.query_params.get("category")
         search = self.request.query_params.get("search")
+        mine = self.request.query_params.get("mine")
+
+        # For producer dash "My Products": /api/products/?mine=1 returns only their products
+        user = self.request.user
+        if mine and user and user.is_authenticated and getattr(user, "role", None) == "producer":
+            qs = qs.filter(producer=user)
+
         if category_id:
             qs = qs.filter(category_id=category_id)
         if search:
