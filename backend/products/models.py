@@ -16,14 +16,19 @@ class Category(models.Model):
     Pre-loaded with: Vegetables, Dairy & Eggs, Bakery, Preserves, Seasonal Specialties.
     """
 
-    # Category name — unique so we can't accidentally create two "Vegetables" categories
+    # Category name — prevent duplicate values . unique so we can't accidentally create two "Vegetables" categories
+
     name = models.CharField(max_length=100, unique=True)
     # Optional description of what belongs in this category
     description = models.TextField(blank=True, default='')
     # Auto-set when the category is first created
     created_at = models.DateTimeField(auto_now_add=True)
 
+    #We pre-loaded them via the Django shell using get_or_create, which creates the record if it doesn't 
+    # exist or retrieves it if it does — safe to run multiple times without creating duplicates.
+
     # Fix the plural name in admin panel — without this Django shows "Categorys" instead of "Categories"
+    # override this to display the correct plural form 'Categories' 
     class Meta:
         verbose_name_plural = 'Categories'
 
@@ -83,10 +88,11 @@ class Product(models.Model):
     # "Enter price: 
     # max_digits=6, decimal_places=2 allows prices up to £9999.99
     # MinValueValidator prevents £0.00 or negative prices
+    #used DecimalField for precise money handling — floats can have rounding issues with currency 
     price = models.DecimalField(
         max_digits=6,
         decimal_places=2,
-        validators=[MinValueValidator(Decimal('0.01'))]
+        validators=[MinValueValidator(Decimal('0.01'))] # '0.01' as a string to avoid floating point issues
     )
 
     # the "per dozen" part — standardised unit choices
@@ -148,6 +154,7 @@ class Product(models.Model):
 
     def __str__(self):
         return f"{self.name} — {self.producer.email}"
+    
     
     # Allergen model "All 14 major allergens recognised by UK law"
 class Allergen(models.Model):

@@ -12,7 +12,7 @@ class User(AbstractUser):
     Supports 5 roles: producer, customer, community_group, restaurant, admin.
     """
 
-    # The 5 roles from TC-022 preconditions — first value is stored in DB, second is display label
+    # The 5 roles  first value is stored in DB, second is display label
     ROLE_CHOICES = [
         ('producer', 'Producer'),               # TC-001: producer registration
         ('customer', 'Customer'),               # TC-002: customer registration
@@ -84,23 +84,31 @@ class CustomerProfile(models.Model):
     """
 
     # Links this profile to exactly one User — same pattern as ProducerProfile
+    # Putting all of these on one User model would mean every producer has empty customer fields and vice versa 
     user = models.OneToOneField(
         User,                            # The model we're linking to
         on_delete=models.CASCADE,        # Delete profile when user is deleted
         related_name='customer_profile'  # Lets us do user.customer_profile from a User object
+                                        # It also prevents naming conflicts since we have two OneToOneFields pointing to User
     )
     # "Enter full name"
     full_name = models.CharField(max_length=255)
+
     # "Enter phone: 07700 900123" — optional, CharField for leading zeros
     phone_number = models.CharField(max_length=20, blank=True, default='')
+
     # "Enter delivery address: 45 Park Street, Bristol" — required per test case
     delivery_address = models.TextField()
+
     # "Enter postcode: BS1 5JG" — also used for food miles calculation in TC-013
     postcode = models.CharField(max_length=10)
+
     # "Accept terms and conditions" — must be True to complete registration
     terms_accepted = models.BooleanField(default=False)
+
     # GDPR Article 7 requires proof of WHEN consent was given — stores the exact timestamp
     terms_accepted_at = models.DateTimeField(null=True, blank=True)
+    
     # Auto-set when the profile is first created
     created_at = models.DateTimeField(auto_now_add=True)
 
