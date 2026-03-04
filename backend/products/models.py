@@ -1,7 +1,5 @@
 from django.conf import settings
 from django.db import models
-# Reference User model via settings instead of importing directly — Django best practice
-from django.conf import settings
 # Validators for enforcing minimum price (prevents £0.00 or negative prices)
 from django.core.validators import MinValueValidator
 # Decimal type for precise money handling — floats have rounding issues with currency

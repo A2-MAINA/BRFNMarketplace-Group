@@ -10,22 +10,14 @@ class CategoryAdmin(admin.ModelAdmin):
     search_fields = ('name',)
 
 
-@admin.register(Product)
-class ProductAdmin(admin.ModelAdmin):
-    list_display = ('name', 'category', 'price', 'stock', 'created_at')
-    list_filter = ('category',)
-    search_fields = ('name',)
-
-    # Admin configuration for Allergen
+# Admin configuration for Allergen
 @admin.register(Allergen)
 class AllergenAdmin(admin.ModelAdmin):
-    # Columns shown in the allergen list page
     list_display = ('name', 'created_at')
-    # Searchable fields
     search_fields = ('name',)
 
 
-# Admin configuration for Product
+# Admin configuration for Product (single registration)
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
     # Columns shown in the product list page
