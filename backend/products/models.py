@@ -1,7 +1,5 @@
-# Import Django's model field types
-from django.db import models
-# Reference User model via settings instead of importing directly — Django best practice
 from django.conf import settings
+from django.db import models
 # Validators for enforcing minimum price (prevents £0.00 or negative prices)
 from django.core.validators import MinValueValidator
 # Decimal type for precise money handling — floats have rounding issues with currency
@@ -19,9 +17,7 @@ class Category(models.Model):
     # Category name — prevent duplicate values . unique so we can't accidentally create two "Vegetables" categories
 
     name = models.CharField(max_length=100, unique=True)
-    # Optional description of what belongs in this category
     description = models.TextField(blank=True, default='')
-    # Auto-set when the category is first created
     created_at = models.DateTimeField(auto_now_add=True)
 
     #We pre-loaded them via the Django shell using get_or_create, which creates the record if it doesn't 

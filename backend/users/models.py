@@ -1,7 +1,32 @@
 # Import Django's built-in User model as a base — gives us password hashing, sessions, permissions for free
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractUser, BaseUserManager
 # Import Django's model field types — EmailField, CharField, etc.
 from django.db import models
+
+
+class UserManager(BaseUserManager):
+    """Manager for custom User with email as USERNAME_FIELD. Avoids 500 on create_user."""
+
+    def create_user(self, email, password=None, **extra_fields):
+        if not email:
+            raise ValueError("Users must have an email address.")
+        email = self.normalize_email(email)
+        # Django's auth still expects a unique username; use email so it's always set
+        extra_fields.setdefault("username", email)
+        user = self.model(email=email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, email, password=None, **extra_fields):
+        extra_fields.setdefault("is_staff", True)
+        extra_fields.setdefault("is_superuser", True)
+        extra_fields.setdefault("role", "admin")
+        if extra_fields.get("is_staff") is not True:
+            raise ValueError("Superuser must have is_staff=True.")
+        if extra_fields.get("is_superuser") is not True:
+            raise ValueError("Superuser must have is_superuser=True.")
+        return self.create_user(email, password, **extra_fields)
 
 
 # Our custom User model — inherits everything from AbstractUser and adds role + email login
@@ -30,6 +55,8 @@ class User(AbstractUser):
     USERNAME_FIELD = 'email'
     # Django requires this when USERNAME_FIELD is changed — username still exists but is auto-generated, users never type it
     REQUIRED_FIELDS = ['username']
+
+    objects = UserManager()
 
     # What shows in admin panel and print statements — e.g. "jane.smith@bristolvalleyfarm.com (Producer)"
     def __str__(self):
