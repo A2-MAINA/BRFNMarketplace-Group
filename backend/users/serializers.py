@@ -207,7 +207,7 @@ class LoginSerializer(serializers.Serializer):
 class ProducerProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProducerProfile
-        fields = ['business_name', 'contact_name', 'phone_number', 'address', 'postcode', 'crn', 'description', 'food_hygiene_rating', 'created_at']
+        fields = ['business_name', 'contact_name', 'phone_number', 'address', 'postcode', 'crn','description', 'food_hygiene_rating', 'created_at']
 
 class CustomerProfileSerializer(serializers.ModelSerializer):
     class Meta:

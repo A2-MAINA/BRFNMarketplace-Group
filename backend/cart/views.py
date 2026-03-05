@@ -64,7 +64,7 @@ class CartItemView(views.APIView):
     permission_classes = [permissions.IsAuthenticated, IsCustomer]
     
     def put(self, request, item_id):
-        cart = Cart.objects.get(customer=request.user)
+        cart = get_object_or_404(Cart, customer=request.user)
         item = get_object_or_404(CartItem, id=item_id, cart=cart)
         quantity = int(request.data.get('quantity', 1))
         
@@ -79,7 +79,7 @@ class CartItemView(views.APIView):
         return Response(CartSerializer(cart).data)
 
     def delete(self, request, item_id):
-        cart = Cart.objects.get(customer=request.user)
+        cart = get_object_or_404(Cart, customer=request.user)
         item = get_object_or_404(CartItem, id=item_id, cart=cart)
         item.delete()
         return Response(CartSerializer(cart).data)

@@ -1,7 +1,7 @@
 from rest_framework import generics, permissions, filters
 from django_filters.rest_framework import DjangoFilterBackend
-from .models import Product, Category
-from .serializers import ProductSerializer, CategorySerializer
+from .models import Product, Category, Allergen
+from .serializers import ProductSerializer, CategorySerializer, AllergenSerializer
 from users.permissions import IsProducer, IsOwner
 
 class ProductListCreateView(generics.ListCreateAPIView):
@@ -42,4 +42,12 @@ class CategoryList(generics.ListAPIView):
     """
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
+    permission_classes = [permissions.AllowAny]
+
+class AllergenList(generics.ListAPIView):
+    """
+    GET: List all 14 allergens.
+    """
+    queryset = Allergen.objects.all()
+    serializer_class = AllergenSerializer
     permission_classes = [permissions.AllowAny]

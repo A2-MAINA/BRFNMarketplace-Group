@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     # Third-party packages
     'rest_framework',
     'corsheaders',
+    'django_filters',
  
 
 
@@ -150,6 +151,13 @@ STATIC_URL = 'static/'
 
 # Custom User Model
 AUTH_USER_MODEL = 'users.User'
+
+# Django REST Framework configuration
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
