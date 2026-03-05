@@ -4,10 +4,12 @@ from .views import (
     CustomerRegistrationView,
     LoginView,
     LogoutView,
-    ProfileView
+    ProfileView,
+    CSRFView
 )
 
 urlpatterns = [
+    path('csrf/', CSRFView.as_view(), name='csrf'),
     path('register/producer/', ProducerRegistrationView.as_view(), name='register-producer'),
     path('register/customer/', CustomerRegistrationView.as_view(), name='register-customer'),
     path('login/', LoginView.as_view(), name='login'),

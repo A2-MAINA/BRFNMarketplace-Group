@@ -9,11 +9,19 @@ class ProductListCreateView(generics.ListCreateAPIView):
     GET: List all products. Supports filtering by category, availability, is_organic and searching by name/description.
     POST: Create a new product (Producer only).
     """
-    queryset = Product.objects.all()
     serializer_class = ProductSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['category', 'availability', 'is_organic']
     search_fields = ['name', 'description']
+
+    def get_queryset(self):
+        queryset = Product.objects.all()
+        if self.request.query_params.get('mine'):
+            if self.request.user.is_authenticated:
+                queryset = queryset.filter(producer=self.request.user)
+            else:
+                queryset = queryset.none()
+        return queryset
 
     def get_permissions(self):
         if self.request.method == 'POST':

@@ -25,22 +25,31 @@ const CATEGORY_IMAGES = {
 function apiProductToUI(apiP) {
   if (!apiP) return null;
   const price = typeof apiP.price === 'number' ? apiP.price : parseFloat(apiP.price);
+  const cat = apiP.category;
+  const catId = typeof cat === 'object' && cat ? cat.id : cat;
+  const catName = typeof cat === 'object' && cat ? cat.name : (apiP.category_name || 'Products');
+  const allergenList = Array.isArray(apiP.allergens)
+    ? apiP.allergens.map(a => typeof a === 'object' ? a.name : a)
+    : [];
+  const producerName = apiP.producer_business_name || 'Local producer';
+  const initials = producerName.split(' ').map(w => w[0]).join('').toUpperCase().substring(0, 2);
+  const availMap = { 'in_season': 'In Season', 'out_of_season': 'Out of Season', 'pre_order': 'Pre-Order' };
   return {
     id: apiP.id,
     name: apiP.name,
     description: apiP.description || '',
     price,
-    category: apiP.category,
-    category_name: apiP.category_name || 'Products',
-    unit: 'unit',
-    producer: 'Local producer',
-    producerInitial: 'LP',
-    availability: (apiP.stock || 0) > 0 ? 'Available' : 'Out of stock',
-    stock: apiP.stock || 0,
-    allergens: [],
-    organic: false,
-    harvestDate: '',
-    img: apiP.image_url || 'images/vegetables.jpg',
+    category: catId,
+    category_name: catName,
+    unit: apiP.unit || 'each',
+    producer: producerName,
+    producerInitial: initials,
+    availability: availMap[apiP.availability] || apiP.availability || 'Available',
+    stock: apiP.stock_quantity || 0,
+    allergens: allergenList,
+    organic: apiP.is_organic === true,
+    harvestDate: apiP.harvest_date || apiP.production_date || apiP.best_before || '',
+    img: apiP.image || 'images/vegetables.jpg',
   };
 }
 
@@ -62,8 +71,18 @@ function buildCategoriesForUI(apiCategories, products) {
 /** Map API profile to state.currentUser shape. */
 function profileToUser(profile) {
   if (!profile) return null;
-  const name = profile.name || [profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.email;
-  return { name, email: profile.email, role: profile.role, businessName: profile.business_name || null };
+  const cp = profile.customer_profile || {};
+  const pp = profile.producer_profile || {};
+  const name = cp.full_name || pp.contact_name || profile.name || [profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.email;
+  return {
+    name,
+    email: profile.email,
+    role: profile.role,
+    businessName: pp.business_name || null,
+    phone: cp.phone_number || pp.phone_number || '',
+    deliveryAddress: cp.delivery_address || '',
+    postcode: cp.postcode || pp.postcode || '',
+  };
 }
 
 // ---- APP STATE ----
@@ -91,7 +110,7 @@ function setCartFromApiResponse(data) {
   state.cart = data.items.map(i => {
     const p = i.product ? apiProductToUI(i.product) : null;
     if (!p) return null;
-    return { ...p, qty: i.quantity || 1 };
+    return { ...p, qty: i.quantity || 1, cartItemId: i.id };
   }).filter(Boolean);
   updateCartUI();
   if (state.currentPage === 'cart') renderCart();
@@ -117,7 +136,9 @@ function addToCart(productId, qty = 1) {
 
 function removeFromCart(productId) {
   if (state.currentUser && state.currentUser.role === 'customer') {
-    removeCartItem(productId).then(data => { setCartFromApiResponse(data); }).catch(err => showToast(apiErrorMessage(err, 'Could not update cart'), 'error'));
+    const item = state.cart.find(i => i.id === Number(productId));
+    if (!item || !item.cartItemId) { showToast('Item not found in cart', 'error'); return; }
+    removeCartItem(item.cartItemId).then(data => { setCartFromApiResponse(data); }).catch(err => showToast(apiErrorMessage(err, 'Could not update cart'), 'error'));
     return;
   }
   state.cart = state.cart.filter(i => i.id !== Number(productId));
@@ -130,7 +151,8 @@ function updateQty(productId, delta) {
   if (!item) return;
   const newQty = Math.max(1, (item.qty || 0) + delta);
   if (state.currentUser && state.currentUser.role === 'customer') {
-    addOrUpdateCartItem(productId, newQty).then(data => { setCartFromApiResponse(data); }).catch(err => showToast(apiErrorMessage(err, 'Could not update quantity'), 'error'));
+    if (!item.cartItemId) { showToast('Item not found in cart', 'error'); return; }
+    updateCartItemQty(item.cartItemId, newQty).then(data => { setCartFromApiResponse(data); }).catch(err => showToast(apiErrorMessage(err, 'Could not update quantity'), 'error'));
     return;
   }
   item.qty = newQty;
@@ -182,7 +204,15 @@ function navigate(page, extra) {
   if (page === 'browse')        renderBrowse();
   if (page === 'cart')          renderCart();
   if (page === 'product')       { detailQty = 1; renderProductDetail(extra); }
-  if (page === 'producer-dash') renderProducerDash();
+  if (page === 'producer-dash') {
+    if (state.currentUser && state.currentUser.role === 'producer') {
+      getProducts({ mine: true })
+        .then(prods => { state.producerProducts = (prods || []).map(apiProductToUI); renderProducerDash(); })
+        .catch(() => { renderProducerDash(); });
+    } else {
+      renderProducerDash();
+    }
+  }
   if (page === 'customer-dash') renderCustomerDash();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -458,6 +488,7 @@ function handleLogout() {
     .finally(() => {
       state.currentUser = null;
       state.cart = [];
+      state.producerProducts = [];
       renderAuthNavbar();
       updateCartUI();
       navigate('home');
@@ -519,8 +550,7 @@ function handleRegister(e) {
         email,
         password,
         password_confirm: confirm,
-        first_name: firstName,
-        last_name: lastName,
+        full_name: `${firstName} ${lastName}`.trim(),
         phone_number: document.getElementById('reg-phone')?.value?.trim() || '',
         delivery_address: document.getElementById('reg-delivery')?.value?.trim() || '—',
         postcode: document.getElementById('reg-postcode')?.value?.trim() || '—',
@@ -528,7 +558,8 @@ function handleRegister(e) {
       });
 
   doRegister()
-    .then(profile => login(email, password).then(() => profile))
+    .then(() => login(email, password))
+    .then(() => getProfile())
     .then(profile => {
       state.currentUser = profileToUser(profile);
       renderAuthNavbar();
@@ -536,10 +567,6 @@ function handleRegister(e) {
       navigate(state.currentUser.role === 'producer' ? 'producer-dash' : 'customer-dash');
       if (state.currentUser.role === 'customer') {
         getCart().then(setCartFromApiResponse).catch(() => {});
-      } else if (state.currentUser.role === 'producer') {
-        getProducts({ mine: true })
-          .then(prods => { state.producerProducts = (prods || []).map(apiProductToUI); renderProducerDash(); })
-          .catch(() => { state.producerProducts = []; renderProducerDash(); });
       }
     })
     .catch(err => {
@@ -564,6 +591,7 @@ function handleLogin(e) {
   if (!email.includes('@')) { showToast('Please enter a valid email', 'error'); return; }
 
   login(email, password)
+    .then(() => getProfile())
     .then(profile => {
       state.currentUser = profileToUser(profile);
       renderAuthNavbar();
@@ -571,10 +599,6 @@ function handleLogin(e) {
       navigate(state.currentUser.role === 'producer' ? 'producer-dash' : 'customer-dash');
       if (state.currentUser.role === 'customer') {
         getCart().then(setCartFromApiResponse).catch(() => {});
-      } else if (state.currentUser.role === 'producer') {
-        getProducts({ mine: true })
-          .then(prods => { state.producerProducts = (prods || []).map(apiProductToUI); renderProducerDash(); })
-          .catch(() => { state.producerProducts = []; renderProducerDash(); });
       }
     })
     .catch(err => showToast(apiErrorMessage(err, 'Invalid email or password'), 'error'));
@@ -688,7 +712,6 @@ function handleAddProduct(e) {
   const description = document.getElementById('prod-desc')?.value?.trim() ?? '';
   const priceVal = document.getElementById('prod-price')?.value?.trim() ?? '';
   const stockVal = document.getElementById('prod-stock')?.value?.trim() ?? '';
-  const imageUrl = document.getElementById('prod-image-url')?.value?.trim() ?? '';
 
   ['prod-name', 'prod-category', 'prod-price', 'prod-stock'].forEach(clearFieldError);
   let valid = true;
@@ -706,14 +729,43 @@ function handleAddProduct(e) {
     return;
   }
 
-  createProduct({
-    name,
-    description: description || '',
-    price: price,
-    category: categoryId,
-    stock: isNaN(stock) ? 0 : stock,
-    image_url: imageUrl || '',
-  })
+  const unitVal = document.getElementById('prod-unit')?.value?.trim() || 'each';
+  const availRaw = document.getElementById('prod-availability')?.value || 'In Season';
+  const availMap = { 'Available': 'in_season', 'In Season': 'in_season', 'Out of Season': 'out_of_season', 'Unavailable': 'out_of_season' };
+  const availability = availMap[availRaw] || 'in_season';
+  const harvestDate = document.getElementById('prod-harvest')?.value || new Date().toISOString().split('T')[0];
+  const organicVal = document.getElementById('prod-organic')?.value === 'true';
+  const selectedAllergens = Array.from(document.querySelectorAll('input[name="allergen"]:checked')).map(cb => cb.value);
+  const allergenNameMap = {
+    'Celery': 'Celery', 'Gluten': 'Cereals containing gluten', 'Crustaceans': 'Crustaceans',
+    'Eggs': 'Eggs', 'Fish': 'Fish', 'Lupin': 'Lupin', 'Milk': 'Milk', 'Molluscs': 'Molluscs',
+    'Mustard': 'Mustard', 'Nuts': 'Nuts', 'Peanuts': 'Peanuts', 'Sesame': 'Sesame',
+    'Soya': 'Soybeans', 'Sulphites': 'Sulphur dioxide'
+  };
+
+  get('/api/allergens/')
+    .then(allergens => {
+      const allergenIds = selectedAllergens.map(cbName => {
+        const dbName = allergenNameMap[cbName] || cbName;
+        const found = allergens.find(a => a.name === dbName);
+        return found ? found.id : null;
+      }).filter(Boolean);
+
+      return createProduct({
+        name,
+        description: description || '',
+        price: price,
+        category: categoryId,
+        stock_quantity: isNaN(stock) ? 1 : stock,
+        unit: unitVal,
+        availability: availability,
+        origin_location: 'Bristol, UK',
+        is_organic: organicVal,
+        storage_instructions: 'Store in a cool, dry place.',
+        harvest_date: harvestDate,
+        allergens: allergenIds,
+      });
+    })
     .then(() => Promise.all([
       loadCatalog(),
       getProducts({ mine: true }),
@@ -730,17 +782,22 @@ function handleAddProduct(e) {
       document.getElementById('prod-stock').value = '';
       const imgEl = document.getElementById('prod-image-url');
       if (imgEl) imgEl.value = '';
+      document.getElementById('prod-unit').value = '';
+      document.getElementById('prod-harvest').value = '';
+      document.getElementById('prod-organic').value = 'false';
+      document.querySelectorAll('input[name="allergen"]:checked').forEach(cb => cb.checked = false);
     })
     .catch(err => {
       showToast(apiErrorMessage(err, 'Could not add product. Check the backend and try again.'), 'error');
       const fieldErrors = typeof getFieldErrors === 'function' && err.body ? getFieldErrors(err.body) : {};
-      const map = { name: 'prod-name', category: 'prod-category', price: 'prod-price', stock: 'prod-stock', description: 'prod-desc' };
+      const map = { name: 'prod-name', category: 'prod-category', price: 'prod-price', stock_quantity: 'prod-stock', description: 'prod-desc' };
       Object.keys(fieldErrors).forEach(f => {
         const id = map[f];
         if (id) showFieldError(id, fieldErrors[f]);
       });
     });
 }
+
 
 function setProducerTab(tab) { state.producerDashTab = tab; renderProducerDash(); }
 
@@ -762,6 +819,12 @@ function renderCustomerDash() {
     if (nameInput) nameInput.value = state.currentUser.name;
     const emailInput = document.getElementById('cdash-profile-email');
     if (emailInput) emailInput.value = state.currentUser.email;
+    const phoneInput = document.getElementById('cdash-profile-phone');
+    if (phoneInput) phoneInput.value = state.currentUser.phone || '';
+    const addressInput = document.getElementById('cdash-profile-address');
+    if (addressInput) addressInput.value = state.currentUser.deliveryAddress || '';
+    const postcodeInput = document.getElementById('cdash-profile-postcode');
+    if (postcodeInput) postcodeInput.value = state.currentUser.postcode || '';
   }
 
   const ordTable = document.getElementById('cdash-orders-table');
@@ -781,6 +844,24 @@ function renderCustomerDash() {
         </tr>`).join('');
     }
   }
+}
+
+function handleUpdateProfile() {
+  const data = {
+    full_name: (document.getElementById('cdash-profile-name')?.value || '').trim(),
+    phone_number: (document.getElementById('cdash-profile-phone')?.value || '').trim(),
+    delivery_address: (document.getElementById('cdash-profile-address')?.value || '').trim(),
+    postcode: (document.getElementById('cdash-profile-postcode')?.value || '').trim(),
+  };
+  if (!data.full_name) { showToast('Full name is required.', 'error'); return; }
+  updateProfile(data)
+    .then(profile => {
+      state.currentUser = profileToUser(profile);
+      renderAuthNavbar();
+      renderCustomerDash();
+      showToast('Profile updated!', 'success');
+    })
+    .catch(err => showToast(apiErrorMessage(err, 'Could not update profile.'), 'error'));
 }
 
 function setCustomerTab(tab) { state.customerDashTab = tab; renderCustomerDash(); }
@@ -803,11 +884,18 @@ function loadCatalog() {
 }
 
 function initAuthAndCart() {
+  get('/api/auth/csrf/').catch(() => {});
   getProfile()
     .then(profile => {
       state.currentUser = profileToUser(profile);
       renderAuthNavbar();
-      if (state.currentUser.role === 'customer') return getCart().then(setCartFromApiResponse);
+      if (state.currentUser.role === 'customer') {
+        return getCart().then(setCartFromApiResponse);
+      } else if (state.currentUser.role === 'producer') {
+        return getProducts({ mine: true }).then(prods => {
+          state.producerProducts = (prods || []).map(apiProductToUI);
+        });
+      }
     })
     .catch(() => { state.currentUser = null; renderAuthNavbar(); })
     .finally(() => updateCartUI());

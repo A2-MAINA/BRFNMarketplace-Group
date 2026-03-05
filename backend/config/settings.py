@@ -84,7 +84,7 @@ TEMPLATES = [
 ]
 
 # CORS configuration
-CORS_ALLOW_ALL_ORIGINS = True  # Restrict to specific domains in production
+# CORS not needed — Nginx proxies API requests on same origin
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
@@ -155,7 +155,7 @@ AUTH_USER_MODEL = 'users.User'
 # Django REST Framework configuration
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.SessionAuthentication',
+        'users.authentication.CsrfExemptSessionAuthentication',
     ],
 }
 
@@ -163,3 +163,4 @@ REST_FRAMEWORK = {
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+

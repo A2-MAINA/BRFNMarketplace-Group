@@ -184,7 +184,7 @@ class LoginSerializer(serializers.Serializer):
         email = data.get('email')
         password = data.get('password')
 
-        user = authenticate(email=email, password=password)
+        user = authenticate(username=email, password=password)
 
         if not user:
             raise serializers.ValidationError(
@@ -213,6 +213,7 @@ class CustomerProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomerProfile
         fields = ['full_name', 'phone_number', 'delivery_address', 'postcode', 'terms_accepted', 'terms_accepted_at', 'created_at']
+        read_only_fields = ['terms_accepted', 'terms_accepted_at', 'created_at']
 
 class UserProfileSerializer(serializers.ModelSerializer):
     producer_profile = ProducerProfileSerializer(read_only=True)
@@ -221,3 +222,16 @@ class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'email', 'role', 'producer_profile', 'customer_profile', 'date_joined']
+
+
+class CustomerProfileUpdateSerializer(serializers.Serializer):
+    full_name = serializers.CharField(max_length=255, required=False)
+    phone_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    delivery_address = serializers.CharField(required=False)
+    postcode = serializers.CharField(max_length=10, required=False)
+
+    def update(self, profile, validated_data):
+        for field, value in validated_data.items():
+            setattr(profile, field, value)
+        profile.save()
+        return profile
