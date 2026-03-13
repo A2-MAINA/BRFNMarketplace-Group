@@ -1,8 +1,8 @@
-# Use Nginx to serve the static placeholder page
 FROM nginx:alpine
-
-# Copy the placeholder HTML into Nginx's default serve directory
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY index.html /usr/share/nginx/html/index.html
-
-# Expose port 80
+COPY style.css /usr/share/nginx/html/style.css
+COPY app.js /usr/share/nginx/html/app.js
+COPY src/ /usr/share/nginx/html/src/
+COPY images/ /usr/share/nginx/html/images/
 EXPOSE 80

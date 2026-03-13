@@ -1,36 +1,691 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BRFN Marketplace</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #f0f4f0;
-            color: #2d5016;
-        }
-        .container {
-            text-align: center;
-        }
-        h1 {
-            font-size: 2rem;
-        }
-        p {
-            font-size: 1.2rem;
-            color: #666;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Optional: set backend URL if not using Docker (e.g. backend on port 8000) -->
+  <!-- <meta name="brfn-api-base" content="http://localhost:8000" /> -->
+  <title>BRFN Digital Marketplace — Bristol Regional Food Network</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-    <div class="container">
-        <h1>BRFN Digital Marketplace</h1>
-        <p>Frontend coming soon — React app will be built here.</p>
+
+<!-- NAVBAR -->
+<nav class="navbar">
+  <div class="navbar-inner">
+    <div class="navbar-brand" onclick="navigate('home')">
+      <div class="brand-logo">
+        <img src="images/farm.jpg" alt="BRFN" onerror="this.parentElement.innerHTML='<span class=brand-logo-icon>🌿</span>'" />
+      </div>
+      <div class="brand-text">
+        <div class="name">BRFN</div>
+        <div class="sub">Bristol Regional Food Network</div>
+      </div>
     </div>
+    <ul class="navbar-nav">
+      <li><a class="nav-link active" data-page="home" href="#" onclick="event.preventDefault(); navigate('home'); return false;">Home</a></li>
+      <li><a class="nav-link" data-page="browse" href="#" onclick="event.preventDefault(); navigate('browse'); return false;">Marketplace</a></li>
+    </ul>
+    <div class="navbar-actions" id="navbar-actions">
+      <button type="button" class="btn btn-secondary btn-sm" onclick="typeof navigate==='function'&&navigate('login');return false">Log in</button>
+      <button type="button" class="btn btn-primary btn-sm" onclick="typeof navigate==='function'&&navigate('register');return false">Sign up</button>
+    </div>
+  </div>
+</nav>
+
+<div class="toast-container" id="toast-container"></div>
+
+<!-- ==================== HOME PAGE ==================== -->
+<div class="page active" id="page-home">
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-bg"></div>
+    <div class="hero-overlay"></div>
+    <div class="hero-inner">
+      <div class="hero-content">
+        <div class="hero-tag"><span class="dot"></span> Within 20 miles of Bristol</div>
+        <h1>Farm fresh food,<br /><em>direct</em> to your door</h1>
+        <p>Connect with Bristol's finest local producers. Buy seasonal, organic, and locally grown food — completely transparent from field to fork.</p>
+        <div class="hero-actions">
+          <button class="btn btn-gold" onclick="navigate('browse')">Shop Local Produce</button>
+          <button class="btn btn-ghost" onclick="navigate('register')">Start Selling</button>
+        </div>
+        <div class="hero-divider"></div>
+        <div class="hero-stats">
+          <div class="hero-stat"><div class="num">40+</div><div class="label">Local Producers</div></div>
+          <div class="hero-stat"><div class="num">200+</div><div class="label">Fresh Products</div></div>
+          <div class="hero-stat"><div class="num">20mi</div><div class="label">Maximum Food Miles</div></div>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <div class="hero-img-card">
+          <img src="images/vegetables.jpg" alt="Fresh vegetables" />
+          <div class="hero-img-label">Fresh Vegetables Daily</div>
+        </div>
+        <div class="hero-img-card">
+          <img src="images/dairy.jpg" alt="Artisan dairy" />
+          <div class="hero-img-label">Artisan Dairy</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CATEGORIES -->
+  <section class="section" style="background:var(--warm-white)">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">Browse by Category</span>
+        <h2>What are you looking for?</h2>
+        <p>All produce sourced within 20 miles of Bristol — seasonal, fresh, and transparently priced.</p>
+      </div>
+      <div class="category-grid">
+        <div class="category-card" onclick="navigate('browse'); setCategory('veg')">
+          <div class="cat-img"><img src="images/vegetables.jpg" alt="Vegetables" /></div>
+          <div class="cat-info"><h4>Vegetables</h4><span>4 products</span></div>
+        </div>
+        <div class="category-card" onclick="navigate('browse'); setCategory('dairy')">
+          <div class="cat-img"><img src="images/dairy.jpg" alt="Dairy" /></div>
+          <div class="cat-info"><h4>Dairy & Eggs</h4><span>3 products</span></div>
+        </div>
+        <div class="category-card" onclick="navigate('browse'); setCategory('bakery')">
+          <div class="cat-img"><img src="images/bakery.jpg" alt="Bakery" /></div>
+          <div class="cat-info"><h4>Bakery</h4><span>2 products</span></div>
+        </div>
+        <div class="category-card" onclick="navigate('browse'); setCategory('preserves')">
+          <div class="cat-img"><img src="images/preserves.jpg" alt="Preserves" /></div>
+          <div class="cat-info"><h4>Preserves</h4><span>2 products</span></div>
+        </div>
+        <div class="category-card" onclick="navigate('browse'); setCategory('seasonal')">
+          <div class="cat-img"><img src="images/seasonal.jpg" alt="Seasonal" /></div>
+          <div class="cat-info"><h4>Seasonal</h4><span>3 products</span></div>
+        </div>
+        <div class="category-card" onclick="navigate('browse'); setCategory('all')">
+          <div class="cat-img"><img src="images/vegetables.jpg" alt="All" /></div>
+          <div class="cat-info"><h4>All Products</h4><span>14 products</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURED PRODUCTS -->
+  <section class="section">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">In Season Now</span>
+        <h2>Featured This Week</h2>
+        <p>Handpicked from our producers — at peak freshness right now.</p>
+      </div>
+      <div class="product-grid" id="home-featured-grid"></div>
+      <div style="text-align:center;margin-top:44px">
+        <button class="btn btn-primary" onclick="navigate('browse')">View All Products</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="section" style="background:var(--warm-white)">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">How It Works</span>
+        <h2>Simple, transparent, local</h2>
+      </div>
+      <div class="how-grid">
+        <div class="how-card">
+          <div class="how-img">
+            <img src="images/vegetables.jpg" alt="Browse" />
+          </div>
+          <div class="how-num">01</div>
+          <h3>Browse & Discover</h3>
+          <p>Explore seasonal produce from Bristol farms, filter by category, and read full allergen information before you buy.</p>
+        </div>
+        <div class="how-card">
+          <div class="how-img">
+            <img src="images/farm.jpg" alt="Order" />
+          </div>
+          <div class="how-num">02</div>
+          <h3>Order & Pay</h3>
+          <p>Add items from multiple producers in one cart. A transparent 5% commission supports the BRFN network.</p>
+        </div>
+        <div class="how-card">
+          <div class="how-img">
+            <img src="images/strawberries.jpg" alt="Receive" />
+          </div>
+          <div class="how-num">03</div>
+          <h3>Receive & Enjoy</h3>
+          <p>Get farm-fresh produce delivered from within 20 miles — supporting local food systems and reducing food miles.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRODUCERS STRIP -->
+  <section class="section">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">Our Producers</span>
+        <h2>Meet the farms behind your food</h2>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px">
+        <div style="border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-sm);background:var(--warm-white)">
+          <img src="images/farm.jpg" alt="Bristol Valley Farm" style="width:100%;height:160px;object-fit:cover" />
+          <div style="padding:16px"><strong style="font-family:'Cormorant Garamond',serif;font-size:18px">Bristol Valley Farm</strong><p style="font-size:13px;color:var(--text-muted);margin-top:4px">Eggs, apples & seasonal veg · BS1 4DJ</p></div>
+        </div>
+        <div style="border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-sm);background:var(--warm-white)">
+          <img src="images/hillside.jpg" alt="Hillside Dairy" style="width:100%;height:160px;object-fit:cover" />
+          <div style="padding:16px"><strong style="font-family:'Cormorant Garamond',serif;font-size:18px">Hillside Dairy</strong><p style="font-size:13px;color:var(--text-muted);margin-top:4px">Artisan cheese & fresh milk · BS8 1AA</p></div>
+        </div>
+        <div style="border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-sm);background:var(--warm-white)">
+          <img src="images/bakery.jpg" alt="Clifton Bakehouse" style="width:100%;height:160px;object-fit:cover" />
+          <div style="padding:16px"><strong style="font-family:'Cormorant Garamond',serif;font-size:18px">Clifton Bakehouse</strong><p style="font-size:13px;color:var(--text-muted);margin-top:4px">Sourdough & heritage bakes · BS8 2EP</p></div>
+        </div>
+        <div style="border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-sm);background:var(--warm-white)">
+          <img src="images/farm.jpg" alt="Redland Growers" style="width:100%;height:160px;object-fit:cover" />
+          <div style="padding:16px"><strong style="font-family:'Cormorant Garamond',serif;font-size:18px">Redland Growers</strong><p style="font-size:13px;color:var(--text-muted);margin-top:4px">Tomatoes, salads & berries · BS6 6LT</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<!-- ==================== BROWSE PAGE ==================== -->
+<div class="page" id="page-browse">
+  <div class="search-bar">
+    <div class="search-bar-inner">
+      <div class="search-wrap">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input type="text" class="search-input" id="search-input" placeholder="Search products, producers, or descriptions…" />
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="state.searchQuery=''; document.getElementById('search-input').value=''; renderBrowse()">Clear</button>
+    </div>
+  </div>
+  <div class="container section">
+    <div style="margin-bottom:48px">
+      <div class="section-header" style="text-align:left;margin-bottom:24px">
+        <span class="section-tag">Categories</span>
+        <h2>Browse the Marketplace</h2>
+      </div>
+      <div class="category-grid" id="category-grid"></div>
+    </div>
+    <div>
+      <div class="section-header" style="text-align:left;margin-bottom:24px">
+        <span class="section-tag">Products</span>
+        <h2>All Products</h2>
+      </div>
+      <div class="product-grid" id="product-grid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== PRODUCT DETAIL ==================== -->
+<div class="page" id="page-product">
+  <div class="container" id="product-detail-content"></div>
+</div>
+
+<!-- ==================== CART ==================== -->
+<div class="page" id="page-cart">
+  <div class="container">
+    <div style="padding:40px 0 20px">
+      <span class="section-tag">Your Basket</span>
+      <h2 style="font-size:36px;color:var(--forest);margin-top:8px">Shopping Cart</h2>
+    </div>
+    <div class="cart-layout">
+      <div id="cart-items-wrap"></div>
+      <div id="cart-summary"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== LOGIN ==================== -->
+<div class="page" id="page-login">
+  <div class="auth-page">
+    <div class="auth-visual">
+      <img src="images/farm.jpg" alt="Farm" />
+      <div class="auth-visual-overlay">
+        <h2>Good food begins with good farming</h2>
+        <p>Join the Bristol Regional Food Network and connect directly with local producers within 20 miles of the city.</p>
+      </div>
+    </div>
+    <div class="auth-form-side">
+      <div class="auth-header">
+        <h2>Welcome back</h2>
+        <p>Log in to your BRFN account to continue shopping</p>
+      </div>
+      <form onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label for="login-email">Email address <span class="req">*</span></label>
+          <input type="email" class="form-control" id="login-email" placeholder="you@example.com" autocomplete="email" />
+        </div>
+        <div class="form-group">
+          <label for="login-password">Password <span class="req">*</span></label>
+          <div class="password-wrap">
+            <input type="password" class="form-control" id="login-password" placeholder="Your password" autocomplete="current-password" />
+            <button type="button" class="toggle-pw" onclick="togglePw('login-password',this)">👁</button>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-full" style="margin-bottom:16px">Log in</button>
+      </form>
+      <div class="auth-divider">or try a demo account</div>
+      <div class="demo-btns">
+        <button class="btn btn-secondary btn-sm btn-full"
+          onclick="document.getElementById('login-email').value='customer@example.com';document.getElementById('login-password').value='Password1!'">
+          Customer Demo
+        </button>
+        <button class="btn btn-secondary btn-sm btn-full"
+          onclick="document.getElementById('login-email').value='producer@example.com';document.getElementById('login-password').value='Password1!'">
+          Producer Demo
+        </button>
+      </div>
+      <div class="auth-switch">Don't have an account? <a href="javascript:void(0)" onclick="typeof navigate==='function'&&navigate('register');return false">Sign up here</a></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== REGISTER ==================== -->
+<div class="page" id="page-register">
+  <div class="auth-page">
+    <div class="auth-visual">
+      <img src="images/seasonal.jpg" alt="Farm produce" />
+      <div class="auth-visual-overlay">
+        <h2>Grow your local food business</h2>
+        <p>Reach customers across Bristol and beyond. Simple setup, transparent pricing, weekly settlements.</p>
+      </div>
+    </div>
+    <div class="auth-form-side">
+      <div class="auth-header">
+        <h2>Create your account</h2>
+        <p>Join the BRFN Marketplace today</p>
+      </div>
+      <div class="role-tabs">
+        <button class="role-tab" data-role="customer" onclick="setRegisterRole('customer')">Customer</button>
+        <button class="role-tab active" data-role="producer" onclick="setRegisterRole('producer')">Producer</button>
+      </div>
+      <form onsubmit="handleRegister(event)" novalidate>
+        <div id="producer-fields">
+          <div class="form-group">
+            <label for="reg-business">Business Name <span class="req">*</span></label>
+            <input type="text" class="form-control" id="reg-business" placeholder="e.g. Bristol Valley Farm" />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="reg-address">Business Address <span class="req">*</span></label>
+              <input type="text" class="form-control" id="reg-address" placeholder="Street address" />
+            </div>
+            <div class="form-group">
+              <label for="reg-postcode">Postcode <span class="req">*</span></label>
+              <input type="text" class="form-control" id="reg-postcode" placeholder="BS1 4DJ" />
+            </div>
+          </div>
+        </div>
+        <div class="form-row" id="producer-name-row">
+          <div class="form-group">
+            <label for="reg-name">Contact Name <span class="req">*</span></label>
+            <input type="text" class="form-control" id="reg-name" placeholder="Jane Smith" />
+            <div class="error-msg" id="reg-name-err"></div>
+          </div>
+          <div class="form-group">
+            <label for="reg-phone">Phone Number</label>
+            <input type="tel" class="form-control" id="reg-phone" placeholder="01179 123456" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="reg-email">Email Address <span class="req">*</span></label>
+          <input type="email" class="form-control" id="reg-email" placeholder="you@example.com" />
+          <div class="error-msg" id="reg-email-err"></div>
+        </div>
+        <div class="form-group">
+          <label for="reg-password">Password <span class="req">*</span></label>
+          <div class="password-wrap">
+            <input type="password" class="form-control" id="reg-password" placeholder="At least 8 characters" autocomplete="new-password" />
+            <button type="button" class="toggle-pw" onclick="togglePw('reg-password',this)">👁</button>
+          </div>
+          <div class="strength-bars">
+            <div class="strength-bar"></div><div class="strength-bar"></div>
+            <div class="strength-bar"></div><div class="strength-bar"></div>
+          </div>
+          <div class="error-msg" id="reg-password-err"></div>
+        </div>
+        <div class="form-group">
+          <label for="reg-confirm">Confirm Password <span class="req">*</span></label>
+          <div class="password-wrap">
+            <input type="password" class="form-control" id="reg-confirm" placeholder="Repeat your password" autocomplete="new-password" />
+            <button type="button" class="toggle-pw" onclick="togglePw('reg-confirm',this)">👁</button>
+          </div>
+          <div class="error-msg" id="reg-confirm-err"></div>
+        </div>
+        <div id="customer-fields" class="hidden">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="reg-first-name">First Name <span class="req">*</span></label>
+              <input type="text" class="form-control" id="reg-first-name" placeholder="Jane" />
+              <div class="error-msg" id="reg-first-name-err"></div>
+            </div>
+            <div class="form-group">
+              <label for="reg-last-name">Last Name <span class="req">*</span></label>
+              <input type="text" class="form-control" id="reg-last-name" placeholder="Smith" />
+              <div class="error-msg" id="reg-last-name-err"></div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="reg-delivery">Delivery Address</label>
+            <input type="text" class="form-control" id="reg-delivery" placeholder="45 Park Street, Bristol, BS1 5JG" />
+          </div>
+        </div>
+        <div class="terms-row hidden" id="terms-row">
+          <input type="checkbox" id="terms-check" />
+          <label for="terms-check">I agree to the <a href="#" onclick="return false">Terms of Service</a> and <a href="#" onclick="return false">Privacy Policy</a></label>
+        </div>
+        <button type="submit" class="btn btn-primary btn-full">Create Account</button>
+      </form>
+      <div class="auth-switch">Already have an account? <a href="javascript:void(0)" onclick="typeof navigate==='function'&&navigate('login');return false">Log in here</a></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== PRODUCER DASHBOARD ==================== -->
+<div class="page" id="page-producer-dash">
+  <div class="container">
+    <div class="dashboard-layout">
+      <aside class="dashboard-sidebar">
+        <div class="sidebar-user">
+          <div class="sidebar-avatar-wrap">
+            <img src="images/farm.jpg" alt="Farm" />
+          </div>
+          <h4 id="pdash-user-name">Jane Smith</h4>
+          <span class="role-tag">Producer</span>
+        </div>
+        <ul class="sidebar-nav" id="producer-sidebar">
+          <li class="active" data-tab="overview"     onclick="setProducerTab('overview')">Overview</li>
+          <li data-tab="orders"      onclick="setProducerTab('orders')">Orders</li>
+          <li data-tab="products"    onclick="setProducerTab('products')">My Products</li>
+          <li data-tab="add-product" onclick="setProducerTab('add-product')">Add Product</li>
+          <li data-tab="payments"    onclick="setProducerTab('payments')">Payments</li>
+          <li class="danger"         onclick="logout()">Log out</li>
+        </ul>
+      </aside>
+      <main id="producer-dash-content">
+
+        <!-- Overview -->
+        <div class="dashboard-section active" id="pdash-overview">
+          <div class="dash-header">
+            <h2>Good morning</h2>
+            <span id="pdash-biz-name" style="color:var(--text-muted);font-size:14px">Bristol Valley Farm</span>
+          </div>
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="label">Weekly Revenue</div>
+              <div class="value" id="pdash-weekly-revenue">£0.00</div>
+              <div class="change" id="pdash-weekly-change">No orders yet</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Active Orders</div>
+              <div class="value" id="pdash-active-orders">0</div>
+              <div class="change">No active orders</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Listed Products</div>
+              <div class="value" id="pdash-listed-products">0</div>
+              <div class="change">Add products to get started</div>
+            </div>
+          </div>
+          <div class="data-table">
+            <table>
+              <thead><tr><th>Order</th><th>Customer</th><th>Order Date</th><th>Delivery</th><th>Items</th><th>Total</th><th>Status</th></tr></thead>
+              <tbody class="pdash-orders-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Orders -->
+        <div class="dashboard-section" id="pdash-orders">
+          <div class="dash-header"><h2>Incoming Orders</h2></div>
+          <div class="data-table">
+            <table>
+              <thead><tr><th>Order</th><th>Customer</th><th>Order Date</th><th>Delivery</th><th>Items</th><th>Total</th><th>Status</th></tr></thead>
+              <tbody class="pdash-orders-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- My Products -->
+        <div class="dashboard-section" id="pdash-products">
+          <div class="dash-header">
+            <h2>My Products</h2>
+            <button class="btn btn-primary btn-sm" onclick="setProducerTab('add-product')">+ Add Product</button>
+          </div>
+          <div class="data-table">
+            <table>
+              <thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Stock</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="pdash-products-table"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Add Product -->
+        <div class="dashboard-section" id="pdash-add-product">
+          <div class="dash-header"><h2>Add New Product</h2></div>
+          <div class="form-card">
+            <h3>Product Details (TC-003)</h3>
+            <form onsubmit="handleAddProduct(event)" novalidate>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Product Name <span class="req">*</span></label>
+                  <input type="text" class="form-control" id="prod-name" placeholder="e.g. Organic Free Range Eggs" />
+                  <div class="error-msg" id="prod-name-err"></div>
+                </div>
+                <div class="form-group">
+                  <label>Category <span class="req">*</span></label>
+                  <select class="form-control" id="prod-category">
+                    <option value="">Select category</option>
+                    <!-- Options filled from API in app.js when producer dashboard loads -->
+                  </select>
+                  <div class="error-msg" id="prod-category-err"></div>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Description</label>
+                <textarea class="form-control" id="prod-desc" placeholder="Describe your product — freshness, farming methods, taste…"></textarea>
+              </div>
+              <div class="form-group">
+                <label>Image URL</label>
+                <input type="url" class="form-control" id="prod-image-url" placeholder="https://… (optional)" />
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Price (£) <span class="req">*</span></label>
+                  <input type="number" class="form-control" id="prod-price" placeholder="3.50" step="0.01" min="0" />
+                  <div class="error-msg" id="prod-price-err"></div>
+                </div>
+                <div class="form-group">
+                  <label>Unit <span class="req">*</span></label>
+                  <input type="text" class="form-control" id="prod-unit" placeholder="e.g. dozen, kg, litre" />
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Stock Quantity <span class="req">*</span></label>
+                  <input type="number" class="form-control" id="prod-stock" placeholder="50" min="0" />
+                  <div class="error-msg" id="prod-stock-err"></div>
+                </div>
+                <div class="form-group">
+                  <label>Availability <span class="req">*</span></label>
+                  <select class="form-control" id="prod-availability">
+                    <option value="Available">Available</option>
+                    <option value="In Season">In Season</option>
+                    <option value="Out of Season">Out of Season</option>
+                    <option value="Unavailable">Unavailable</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Harvest / Production Date</label>
+                  <input type="date" class="form-control" id="prod-harvest" />
+                </div>
+                <div class="form-group">
+                  <label>Organic Certified?</label>
+                  <select class="form-control" id="prod-organic">
+                    <option value="false">No</option>
+                    <option value="true">Yes — Certified Organic</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Allergen Information <span class="req">*</span></label>
+                <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Required by UK food safety law. Select all that apply.</p>
+                <div class="allergen-checks">
+                  <label class="allergen-check"><input type="checkbox" name="allergen" value="Celery" /> Celery</label>
+                  <label class="allergen-check"><input type="checkbox" name="allergen" value="Gluten" /> Gluten / Wheat</label>
+                  <label class="allergen-check"><input type="checkbox" name="allergen" value="Crustaceans" /> Crustaceans</label>
+                  <label class="allergen-check"><input type="checkbox" name="allergen" value="Eggs" /> Eggs</label>
+                  <label class="allergen-check"><input type="checkbox" name="allergen" value="Fish" /> Fish</label>
+                  <label class="allergen-check"><input type="checkbox" name="allergen" value="Lupin" /> Lupin</label>
+                  <label class="allergen-check"><input type="checkbox" name="allergen" value="Milk" /> Milk / Dairy</label>
+                  <label class="allergen-check"><input type="checkbox" name="allergen" value="Molluscs" /> Molluscs</label>
+                  <label class="allergen-check"><input type="checkbox" name="allergen" value="Mustard" /> Mustard</label>
+                  <label class="allergen-check"><input type="checkbox" name="allergen" value="Nuts" /> Tree Nuts</label>
+                  <label class="allergen-check"><input type="checkbox" name="allergen" value="Peanuts" /> Peanuts</label>
+                  <label class="allergen-check"><input type="checkbox" name="allergen" value="Sesame" /> Sesame</label>
+                  <label class="allergen-check"><input type="checkbox" name="allergen" value="Soya" /> Soya</label>
+                  <label class="allergen-check"><input type="checkbox" name="allergen" value="Sulphites" /> Sulphur Dioxide</label>
+                </div>
+              </div>
+              <div style="display:flex;gap:12px;margin-top:8px">
+                <button type="submit" class="btn btn-primary">Save Product Listing</button>
+                <button type="button" class="btn btn-secondary" onclick="setProducerTab('products')">Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Payments -->
+        <div class="dashboard-section" id="pdash-payments">
+          <div class="dash-header"><h2>Payment Settlements</h2></div>
+          <div class="form-card">
+            <div class="stats-grid" style="margin-bottom:28px">
+              <div class="stat-card"><div class="label">This Week's Orders</div><div class="value">£0.00</div></div>
+              <div class="stat-card"><div class="label">Network Commission (5%)</div><div class="value" style="color:var(--gold)">£0.00</div></div>
+              <div class="stat-card"><div class="label">Your Payment (95%)</div><div class="value" style="color:var(--forest-mid)">£0.00</div></div>
+            </div>
+            <p style="font-size:13px;color:var(--text-muted);margin-bottom:20px">Settled every Monday. Last settlement: 10 Feb 2026.</p>
+            <div class="data-table">
+              <table>
+                <thead><tr><th>Order</th><th>Customer</th><th>Date</th><th>Items</th><th>Order Total</th><th>Commission</th><th>Your Share</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted);font-size:14px">
+                      No settlements yet. When customers place real orders (Sprint 2), their payouts will be summarised here.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div style="margin-top:16px">
+              <button class="btn btn-secondary btn-sm" onclick="showToast('CSV download available with Sprint 2 API','')">Download CSV</button>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== CUSTOMER DASHBOARD ==================== -->
+<div class="page" id="page-customer-dash">
+  <div class="container">
+    <div class="dashboard-layout">
+      <aside class="dashboard-sidebar">
+        <div class="sidebar-user">
+          <div class="sidebar-avatar-fallback" id="cdash-avatar">--</div>
+          <h4 id="cdash-user-name">Customer</h4>
+          <span class="role-tag">Customer</span>
+        </div>
+        <ul class="sidebar-nav" id="customer-sidebar">
+          <li class="active" data-tab="orders"  onclick="setCustomerTab('orders')">My Orders</li>
+          <li data-tab="profile" onclick="setCustomerTab('profile')">My Profile</li>
+          <li class="danger" onclick="logout()">Log out</li>
+        </ul>
+      </aside>
+      <main id="customer-dash-content">
+        <div class="dashboard-section active" id="cdash-orders">
+          <div class="dash-header">
+            <h2>My Orders</h2>
+            <button class="btn btn-primary btn-sm" onclick="navigate('browse')">Shop Again</button>
+          </div>
+          <div class="data-table">
+            <table>
+              <thead><tr><th>Order</th><th>Date</th><th>Producers</th><th>Items</th><th>Total</th><th>Status</th><th>Action</th></tr></thead>
+              <tbody id="cdash-orders-table"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="dashboard-section" id="cdash-profile">
+          <div class="dash-header"><h2>My Profile</h2></div>
+          <div class="form-card" style="max-width:540px">
+            <div class="form-group"><label>Full Name</label><input type="text" id="cdash-profile-name" class="form-control" placeholder="Full name" /></div>
+            <div class="form-group"><label>Email</label><input type="email" id="cdash-profile-email" class="form-control" placeholder="Email" disabled /></div>
+            <div class="form-group"><label>Phone</label><input type="tel" id="cdash-profile-phone" class="form-control" placeholder="Phone" /></div>
+            <div class="form-group"><label>Delivery Address</label><input type="text" id="cdash-profile-address" class="form-control" placeholder="Delivery address" /></div>
+            <div class="form-group"><label>Postcode</label><input type="text" id="cdash-profile-postcode" class="form-control" placeholder="Postcode" /></div>
+            <button class="btn btn-primary" onclick="handleUpdateProfile()">Save Changes</button>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <div class="container">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <h3>BRFN Marketplace</h3>
+        <p>Connecting Bristol's finest local producers with customers who care about where their food comes from. All produce sourced within 20 miles.</p>
+      </div>
+      <div class="footer-col">
+        <h5>Marketplace</h5>
+        <ul>
+          <li onclick="navigate('browse')">Browse All</li>
+          <li onclick="navigate('browse'); setCategory('veg')">Vegetables</li>
+          <li onclick="navigate('browse'); setCategory('dairy')">Dairy & Eggs</li>
+          <li onclick="navigate('browse'); setCategory('seasonal')">Seasonal</li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h5>Account</h5>
+        <ul>
+          <li><a href="javascript:void(0)" onclick="typeof navigate==='function'&&navigate('login');return false">Log in</a></li>
+          <li><a href="javascript:void(0)" onclick="typeof navigate==='function'&&navigate('register');return false">Sign up</a></li>
+          <li><a href="javascript:void(0)" onclick="typeof navigate==='function'&&(navigate('register'),setRegisterRole('producer'));return false">Sell Your Produce</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 Bristol Regional Food Network. Built with Django & Docker.</span>
+      <span>Supporting local food systems</span>
+    </div>
+  </div>
+</footer>
+
+<script src="src/utils/errors.js"></script>
+<script src="src/services/api.js"></script>
+<script src="src/services/auth.js"></script>
+<script src="src/services/products.js"></script>
+<script src="src/services/cart.js"></script>
+<script src="src/services/orders.js"></script>
+<script src="app.js"></script>
+<script>
+  function togglePw(id, btn) {
+    const input = document.getElementById(id);
+    input.type = input.type === 'password' ? 'text' : 'password';
+    btn.textContent = input.type === 'password' ? '👁' : '🙈';
+  }
+
+  // Default register to producer tab
+  setRegisterRole('producer');
+</script>
+
 </body>
 </html>

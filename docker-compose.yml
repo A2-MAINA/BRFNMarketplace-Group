@@ -15,7 +15,7 @@ services: # Define all containers that make up the application
     volumes:
       - postgres_data:/var/lib/postgresql/data # Persist database data so it survives container restarts
     ports:
-      - "5432:5432" # Map host port 5432 to container port 5432 (host:container)
+      - "5455:5432" # Map host port 5455 to container port 5432 (host:container)
 
  
   # BACKEND SERVICE — Django + DRF
@@ -38,7 +38,7 @@ services: # Define all containers that make up the application
     volumes:
       - ./backend:/app # Bind mount — code changes on your machine reflect inside container instantly
     ports:
-      - "8000:8000" # Access Django at localhost:8000 in your browser (host:container)
+      - "8025:8000" # Access Django at localhost:8025 in your browser (host:container)
 
 
   # FRONTEND SERVICE — Nginx placeholder (React later)
@@ -50,7 +50,7 @@ services: # Define all containers that make up the application
     depends_on:
       - backend # Start the backend container before this one
     ports:
-      - "3000:80" # Access frontend at localhost:3000, Nginx serves on port 80 internally (host:container)
+      - "3025:80" # Access frontend at localhost:3025, Nginx serves on port 80 internally (host:container)
 
 
 # NAMED VOLUMES — Persistent storage managed by Docker

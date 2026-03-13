@@ -1,7 +1,32 @@
 # Import Django's built-in User model as a base — gives us password hashing, sessions, permissions for free
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractUser, BaseUserManager
 # Import Django's model field types — EmailField, CharField, etc.
 from django.db import models
+
+
+class UserManager(BaseUserManager):
+    """Manager for custom User with email as USERNAME_FIELD. Avoids 500 on create_user."""
+
+    def create_user(self, email, password=None, **extra_fields):
+        if not email:
+            raise ValueError("Users must have an email address.")
+        email = self.normalize_email(email)
+        # Django's auth still expects a unique username; use email so it's always set
+        extra_fields.setdefault("username", email)
+        user = self.model(email=email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, email, password=None, **extra_fields):
+        extra_fields.setdefault("is_staff", True)
+        extra_fields.setdefault("is_superuser", True)
+        extra_fields.setdefault("role", "admin")
+        if extra_fields.get("is_staff") is not True:
+            raise ValueError("Superuser must have is_staff=True.")
+        if extra_fields.get("is_superuser") is not True:
+            raise ValueError("Superuser must have is_superuser=True.")
+        return self.create_user(email, password, **extra_fields)
 
 
 # Our custom User model — inherits everything from AbstractUser and adds role + email login
@@ -12,7 +37,7 @@ class User(AbstractUser):
     Supports 5 roles: producer, customer, community_group, restaurant, admin.
     """
 
-    # The 5 roles from TC-022 preconditions — first value is stored in DB, second is display label
+    # The 5 roles  first value is stored in DB, second is display label
     ROLE_CHOICES = [
         ('producer', 'Producer'),               # TC-001: producer registration
         ('customer', 'Customer'),               # TC-002: customer registration
@@ -30,6 +55,8 @@ class User(AbstractUser):
     USERNAME_FIELD = 'email'
     # Django requires this when USERNAME_FIELD is changed — username still exists but is auto-generated, users never type it
     REQUIRED_FIELDS = ['username']
+
+    objects = UserManager()
 
     # What shows in admin panel and print statements — e.g. "jane.smith@bristolvalleyfarm.com (Producer)"
     def __str__(self):
@@ -84,23 +111,31 @@ class CustomerProfile(models.Model):
     """
 
     # Links this profile to exactly one User — same pattern as ProducerProfile
+    # Putting all of these on one User model would mean every producer has empty customer fields and vice versa 
     user = models.OneToOneField(
         User,                            # The model we're linking to
         on_delete=models.CASCADE,        # Delete profile when user is deleted
         related_name='customer_profile'  # Lets us do user.customer_profile from a User object
+                                        # It also prevents naming conflicts since we have two OneToOneFields pointing to User
     )
     # "Enter full name"
     full_name = models.CharField(max_length=255)
+
     # "Enter phone: 07700 900123" — optional, CharField for leading zeros
     phone_number = models.CharField(max_length=20, blank=True, default='')
+
     # "Enter delivery address: 45 Park Street, Bristol" — required per test case
     delivery_address = models.TextField()
+
     # "Enter postcode: BS1 5JG" — also used for food miles calculation in TC-013
     postcode = models.CharField(max_length=10)
+
     # "Accept terms and conditions" — must be True to complete registration
     terms_accepted = models.BooleanField(default=False)
+
     # GDPR Article 7 requires proof of WHEN consent was given — stores the exact timestamp
     terms_accepted_at = models.DateTimeField(null=True, blank=True)
+    
     # Auto-set when the profile is first created
     created_at = models.DateTimeField(auto_now_add=True)
 

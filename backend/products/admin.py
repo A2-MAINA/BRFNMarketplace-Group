@@ -4,24 +4,20 @@ from django.contrib import admin
 from .models import Category, Product, Allergen
 
 
-# Admin configuration for Category
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    # Columns shown in the category list page
     list_display = ('name', 'created_at')
-    # Searchable fields
     search_fields = ('name',)
 
-    # Admin configuration for Allergen
+
+# Admin configuration for Allergen
 @admin.register(Allergen)
 class AllergenAdmin(admin.ModelAdmin):
-    # Columns shown in the allergen list page
     list_display = ('name', 'created_at')
-    # Searchable fields
     search_fields = ('name',)
 
 
-# Admin configuration for Product
+# Admin configuration for Product (single registration)
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
     # Columns shown in the product list page
