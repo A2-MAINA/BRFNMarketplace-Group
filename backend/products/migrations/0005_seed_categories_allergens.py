@@ -53,7 +53,7 @@ def reverse_seed(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('products', '0004_merge_0002_allergen_product_0003_product_producer'),
+        ('products', '0001_initial'),
     ]
 
     operations = [
