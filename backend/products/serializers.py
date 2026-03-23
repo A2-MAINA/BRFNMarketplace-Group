@@ -42,3 +42,13 @@ class ProductSerializer(serializers.ModelSerializer):
         if hasattr(obj.producer, 'producer_profile'):
             return obj.producer.producer_profile.business_name
         return obj.producer.email
+
+class ProductInventoryUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Product
+        fields = ['stock_quantity', 'availability']
+
+    def validate_stock_quantity(self, value):
+        if value < 0:
+            raise serializers.ValidationError('Stock quantity cannot be negative.')
+        return value
