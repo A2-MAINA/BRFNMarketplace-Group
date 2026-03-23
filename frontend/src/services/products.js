@@ -38,3 +38,32 @@ async function getCategories() {
 async function createProduct(data) {
   return post(`/api/products/`, data);
 }
+
+/**
+ * Sprint 2: Search products using backend filtering.
+ * @param {string} query
+ * @returns {Promise<object[]>}
+ */
+async function searchProducts(query) {
+  const q = (query || '').toString().trim();
+  if (!q) return [];
+  return getProducts({ search: q });
+}
+
+/**
+ * Sprint 2: Update producer inventory (stock + availability).
+ * @param {number} productId
+ * @param {object} data - { stock_quantity?: number, availability?: 'in_season'|'out_of_season'|'pre_order' }
+ * @returns {Promise<object>} Updated product.
+ */
+async function updateProductInventory(productId, data = {}) {
+  const payload = {};
+  if (data.stock_quantity != null) {
+    const n = parseInt(data.stock_quantity, 10);
+    payload.stock_quantity = Number.isFinite(n) && n >= 0 ? n : 0;
+  }
+  if (data.availability != null) {
+    payload.availability = data.availability;
+  }
+  return patch(`/api/products/${productId}/`, payload);
+}

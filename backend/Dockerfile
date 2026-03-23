@@ -20,11 +20,17 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the project code
+# Copy entrypoint script to a path outside /app (so it's not overridden by bind mounts)
+COPY entrypoint.sh /docker-entrypoint.sh
+
+# Fix Windows line endings (CRLF) and make the entrypoint script executable
+RUN sed -i 's/\r$//' /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh
+
+# Copy the rest of the project code into /app
 COPY . .
 
 # Expose port 8000 for the Django development server
 EXPOSE 8000
 
-# Command to run the Django development server
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+# Entrypoint: wait for DB, run migrations, seed data, create admin, then start server
+ENTRYPOINT ["/docker-entrypoint.sh"]

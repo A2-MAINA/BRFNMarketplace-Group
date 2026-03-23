@@ -25,22 +25,31 @@ const CATEGORY_IMAGES = {
 function apiProductToUI(apiP) {
   if (!apiP) return null;
   const price = typeof apiP.price === 'number' ? apiP.price : parseFloat(apiP.price);
+  const cat = apiP.category;
+  const catId = typeof cat === 'object' && cat ? cat.id : cat;
+  const catName = typeof cat === 'object' && cat ? cat.name : (apiP.category_name || 'Products');
+  const allergenList = Array.isArray(apiP.allergens)
+    ? apiP.allergens.map(a => typeof a === 'object' ? a.name : a)
+    : [];
+  const producerName = apiP.producer_business_name || 'Local producer';
+  const initials = producerName.split(' ').map(w => w[0]).join('').toUpperCase().substring(0, 2);
+  const availMap = { 'in_season': 'In Season', 'out_of_season': 'Out of Season', 'pre_order': 'Pre-Order' };
   return {
     id: apiP.id,
     name: apiP.name,
     description: apiP.description || '',
     price,
-    category: apiP.category,
-    category_name: apiP.category_name || 'Products',
-    unit: 'unit',
-    producer: 'Local producer',
-    producerInitial: 'LP',
-    availability: (apiP.stock || 0) > 0 ? 'Available' : 'Out of stock',
-    stock: apiP.stock || 0,
-    allergens: [],
-    organic: false,
-    harvestDate: '',
-    img: apiP.image_url || 'images/vegetables.jpg',
+    category: catId,
+    category_name: catName,
+    unit: apiP.unit || 'each',
+    producer: producerName,
+    producerInitial: initials,
+    availability: availMap[apiP.availability] || apiP.availability || 'Available',
+    stock: apiP.stock_quantity || 0,
+    allergens: allergenList,
+    organic: apiP.is_organic === true,
+    harvestDate: apiP.harvest_date || apiP.production_date || apiP.best_before || '',
+    img: apiP.image || 'images/vegetables.jpg',
   };
 }
 
@@ -62,8 +71,18 @@ function buildCategoriesForUI(apiCategories, products) {
 /** Map API profile to state.currentUser shape. */
 function profileToUser(profile) {
   if (!profile) return null;
-  const name = profile.name || [profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.email;
-  return { name, email: profile.email, role: profile.role, businessName: profile.business_name || null };
+  const cp = profile.customer_profile || {};
+  const pp = profile.producer_profile || {};
+  const name = cp.full_name || pp.contact_name || profile.name || [profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.email;
+  return {
+    name,
+    email: profile.email,
+    role: profile.role,
+    businessName: pp.business_name || null,
+    phone: cp.phone_number || pp.phone_number || '',
+    deliveryAddress: cp.delivery_address || '',
+    postcode: cp.postcode || pp.postcode || '',
+  };
 }
 
 // ---- APP STATE ----
@@ -79,6 +98,12 @@ const state = {
   categories: [],   // UI categories (All + from API)
   products: [],     // All products from API (normalized)
   producerProducts: [], // Products belonging to logged-in producer
+  producerOrders: null,
+  producerOrdersLoading: false,
+  customerOrders: null,
+  customerOrdersLoading: false,
+  producerSettlementReport: null,
+  producerSettlementLoading: false,
 };
 
 // ---- CART ----
@@ -91,7 +116,7 @@ function setCartFromApiResponse(data) {
   state.cart = data.items.map(i => {
     const p = i.product ? apiProductToUI(i.product) : null;
     if (!p) return null;
-    return { ...p, qty: i.quantity || 1 };
+    return { ...p, qty: i.quantity || 1, cartItemId: i.id };
   }).filter(Boolean);
   updateCartUI();
   if (state.currentPage === 'cart') renderCart();
@@ -117,7 +142,9 @@ function addToCart(productId, qty = 1) {
 
 function removeFromCart(productId) {
   if (state.currentUser && state.currentUser.role === 'customer') {
-    removeCartItem(productId).then(data => { setCartFromApiResponse(data); }).catch(err => showToast(apiErrorMessage(err, 'Could not update cart'), 'error'));
+    const item = state.cart.find(i => i.id === Number(productId));
+    if (!item || !item.cartItemId) { showToast('Item not found in cart', 'error'); return; }
+    removeCartItem(item.cartItemId).then(data => { setCartFromApiResponse(data); }).catch(err => showToast(apiErrorMessage(err, 'Could not update cart'), 'error'));
     return;
   }
   state.cart = state.cart.filter(i => i.id !== Number(productId));
@@ -130,7 +157,8 @@ function updateQty(productId, delta) {
   if (!item) return;
   const newQty = Math.max(1, (item.qty || 0) + delta);
   if (state.currentUser && state.currentUser.role === 'customer') {
-    addOrUpdateCartItem(productId, newQty).then(data => { setCartFromApiResponse(data); }).catch(err => showToast(apiErrorMessage(err, 'Could not update quantity'), 'error'));
+    if (!item.cartItemId) { showToast('Item not found in cart', 'error'); return; }
+    updateCartItemQty(item.cartItemId, newQty).then(data => { setCartFromApiResponse(data); }).catch(err => showToast(apiErrorMessage(err, 'Could not update quantity'), 'error'));
     return;
   }
   item.qty = newQty;
@@ -182,7 +210,15 @@ function navigate(page, extra) {
   if (page === 'browse')        renderBrowse();
   if (page === 'cart')          renderCart();
   if (page === 'product')       { detailQty = 1; renderProductDetail(extra); }
-  if (page === 'producer-dash') renderProducerDash();
+  if (page === 'producer-dash') {
+    if (state.currentUser && state.currentUser.role === 'producer') {
+      getProducts({ mine: true })
+        .then(prods => { state.producerProducts = (prods || []).map(apiProductToUI); renderProducerDash(); })
+        .catch(() => { renderProducerDash(); });
+    } else {
+      renderProducerDash();
+    }
+  }
   if (page === 'customer-dash') renderCustomerDash();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -458,6 +494,7 @@ function handleLogout() {
     .finally(() => {
       state.currentUser = null;
       state.cart = [];
+      state.producerProducts = [];
       renderAuthNavbar();
       updateCartUI();
       navigate('home');
@@ -519,8 +556,7 @@ function handleRegister(e) {
         email,
         password,
         password_confirm: confirm,
-        first_name: firstName,
-        last_name: lastName,
+        full_name: `${firstName} ${lastName}`.trim(),
         phone_number: document.getElementById('reg-phone')?.value?.trim() || '',
         delivery_address: document.getElementById('reg-delivery')?.value?.trim() || '—',
         postcode: document.getElementById('reg-postcode')?.value?.trim() || '—',
@@ -528,7 +564,8 @@ function handleRegister(e) {
       });
 
   doRegister()
-    .then(profile => login(email, password).then(() => profile))
+    .then(() => login(email, password))
+    .then(() => getProfile())
     .then(profile => {
       state.currentUser = profileToUser(profile);
       renderAuthNavbar();
@@ -536,10 +573,6 @@ function handleRegister(e) {
       navigate(state.currentUser.role === 'producer' ? 'producer-dash' : 'customer-dash');
       if (state.currentUser.role === 'customer') {
         getCart().then(setCartFromApiResponse).catch(() => {});
-      } else if (state.currentUser.role === 'producer') {
-        getProducts({ mine: true })
-          .then(prods => { state.producerProducts = (prods || []).map(apiProductToUI); renderProducerDash(); })
-          .catch(() => { state.producerProducts = []; renderProducerDash(); });
       }
     })
     .catch(err => {
@@ -564,6 +597,7 @@ function handleLogin(e) {
   if (!email.includes('@')) { showToast('Please enter a valid email', 'error'); return; }
 
   login(email, password)
+    .then(() => getProfile())
     .then(profile => {
       state.currentUser = profileToUser(profile);
       renderAuthNavbar();
@@ -571,10 +605,6 @@ function handleLogin(e) {
       navigate(state.currentUser.role === 'producer' ? 'producer-dash' : 'customer-dash');
       if (state.currentUser.role === 'customer') {
         getCart().then(setCartFromApiResponse).catch(() => {});
-      } else if (state.currentUser.role === 'producer') {
-        getProducts({ mine: true })
-          .then(prods => { state.producerProducts = (prods || []).map(apiProductToUI); renderProducerDash(); })
-          .catch(() => { state.producerProducts = []; renderProducerDash(); });
       }
     })
     .catch(err => showToast(apiErrorMessage(err, 'Invalid email or password'), 'error'));
@@ -618,17 +648,111 @@ function renderProducerDash() {
   const listedEl = document.getElementById('pdash-listed-products');
   if (listedEl) listedEl.textContent = String(listedCount);
   const activeOrdersEl = document.getElementById('pdash-active-orders');
-  if (activeOrdersEl) activeOrdersEl.textContent = '0';
   const weeklyRevenueEl = document.getElementById('pdash-weekly-revenue');
-  if (weeklyRevenueEl) weeklyRevenueEl.textContent = '£0.00';
+  const formatMoney = (v) => {
+    const n = typeof v === 'string' ? parseFloat(v) : Number(v);
+    const safe = Number.isFinite(n) ? n : 0;
+    return '£' + safe.toFixed(2);
+  };
 
-  const ordersBody = `
+  const ordersTbodyEls = document.querySelectorAll('.pdash-orders-tbody');
+  const setOrdersBody = (html) => { ordersTbodyEls.forEach(el => { if (el) el.innerHTML = html; }); };
+
+  const loadingRow = `
+    <tr>
+      <td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted);font-size:14px">
+        Loading orders…
+      </td>
+    </tr>`;
+
+  const emptyRow = `
     <tr>
       <td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted);font-size:14px">
         You haven’t received any orders yet. When customers checkout, their orders will appear here.
       </td>
     </tr>`;
-  document.querySelectorAll('.pdash-orders-tbody').forEach(el => { if (el) el.innerHTML = ordersBody; });
+
+  const toItemsCount = (o) => {
+    if (!o) return '—';
+    if (Array.isArray(o.items)) return String(o.items.length);
+    return String(o.items_count || o.items || o.item_count || '—');
+  };
+
+  const toOrderId = (o) => (o && (o.invoice_number || o.id)) ? String(o.invoice_number || o.id) : '—';
+  const toCustomerName = (o) => {
+    if (!o) return '—';
+    return String(o.customer_name || o.customer || (o.customer && o.customer.name) || '—');
+  };
+  const toDate = (o) => (o && (o.created_at || o.order_date || o.date)) ? String(o.created_at || o.order_date || o.date) : '—';
+  const toDeliveryDate = (o) => (o && (o.delivery_date || o.delivery)) ? String(o.delivery_date || o.delivery) : '—';
+  const toTotal = (o) => (o && (o.total_amount || o.total || o.gross_total)) != null ? (o.total_amount || o.total || o.gross_total) : 0;
+  const toStatus = (o) => (o && o.status) ? String(o.status) : 'pending';
+  const toUpdateId = (o) => (o && (o.id || o.order_id || o.pk)) ? String(o.id || o.order_id || o.pk) : null;
+
+  // Sprint 2 TC-010: Producer can progress status Pending → Confirmed → Processing → Ready → Delivered
+  const statusActionHTML = (o) => {
+    const id = toUpdateId(o);
+    const status = toStatus(o).toLowerCase();
+    if (!id) return '';
+
+    if (status === 'pending') {
+      return `
+        <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" onclick="handleUpdateOrderStatus('${id}','confirmed')">Confirm</button>
+          <button class="btn btn-secondary btn-sm" onclick="handleUpdateOrderStatus('${id}','rejected')">Reject</button>
+        </div>`;
+    }
+    if (status === 'confirmed') {
+      return `<div style="margin-top:6px"><button class="btn btn-secondary btn-sm" onclick="handleUpdateOrderStatus('${id}','processing')">Mark Processing</button></div>`;
+    }
+    if (status === 'processing') {
+      return `<div style="margin-top:6px"><button class="btn btn-secondary btn-sm" onclick="handleUpdateOrderStatus('${id}','ready')">Mark Ready</button></div>`;
+    }
+    if (status === 'ready') {
+      return `<div style="margin-top:6px"><button class="btn btn-secondary btn-sm" onclick="handleUpdateOrderStatus('${id}','delivered')">Mark Delivered</button></div>`;
+    }
+    return '';
+  };
+
+  if (activeOrdersEl) activeOrdersEl.textContent = String((state.producerOrders || []).length || 0);
+
+  if (state.producerOrders === null) {
+    setOrdersBody(loadingRow);
+    if (!state.producerOrdersLoading) refreshProducerOrders();
+  } else if (Array.isArray(state.producerOrders) && state.producerOrders.length === 0) {
+    setOrdersBody(emptyRow);
+  } else {
+    const rows = (state.producerOrders || []).map(o => `
+      <tr>
+        <td>${toOrderId(o)}</td>
+        <td>${toCustomerName(o)}</td>
+        <td style="font-size:12px">${toDate(o)}</td>
+        <td style="font-size:12px">${toDeliveryDate(o)}</td>
+        <td style="font-size:12px">${toItemsCount(o)}</td>
+        <td style="font-weight:700">${formatMoney(toTotal(o))}</td>
+        <td>
+          <span class="status-pill status-${toStatus(o).toLowerCase()}">${toStatus(o)}</span>
+          ${statusActionHTML(o)}
+        </td>
+      </tr>
+    `).join('');
+    setOrdersBody(rows);
+  }
+
+  // Best-effort weekly revenue from delivered orders.
+  if (weeklyRevenueEl) {
+    if (Array.isArray(state.producerOrders)) {
+      const delivered = state.producerOrders.filter(o => String((o && o.status) || '').toLowerCase() === 'delivered');
+      const revenue = delivered.reduce((sum, o) => {
+        const t = toTotal(o);
+        const n = typeof t === 'string' ? parseFloat(t) : Number(t);
+        return sum + (Number.isFinite(n) ? n : 0);
+      }, 0);
+      weeklyRevenueEl.textContent = formatMoney(revenue);
+    } else {
+      weeklyRevenueEl.textContent = '£0.00';
+    }
+  }
 
   const prodTable = document.getElementById('pdash-products-table');
   if (prodTable) {
@@ -640,7 +764,7 @@ function renderProducerDash() {
         <td style="font-weight:700">£${p.price.toFixed(2)}</td>
         <td>${p.stock} ${p.unit}s</td>
         <td><span class="status-pill status-confirmed">${p.availability}</span></td>
-        <td><button class="btn btn-secondary btn-sm" onclick="showToast('Edit product — available with Sprint 2 API','')">Edit</button></td>
+        <td><button class="btn btn-secondary btn-sm" onclick="handleEditProduct(${p.id})">Edit</button></td>
       </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px">Your products will appear here. Add products via the form below.</td></tr>';
   }
 
@@ -688,7 +812,6 @@ function handleAddProduct(e) {
   const description = document.getElementById('prod-desc')?.value?.trim() ?? '';
   const priceVal = document.getElementById('prod-price')?.value?.trim() ?? '';
   const stockVal = document.getElementById('prod-stock')?.value?.trim() ?? '';
-  const imageUrl = document.getElementById('prod-image-url')?.value?.trim() ?? '';
 
   ['prod-name', 'prod-category', 'prod-price', 'prod-stock'].forEach(clearFieldError);
   let valid = true;
@@ -706,14 +829,43 @@ function handleAddProduct(e) {
     return;
   }
 
-  createProduct({
-    name,
-    description: description || '',
-    price: price,
-    category: categoryId,
-    stock: isNaN(stock) ? 0 : stock,
-    image_url: imageUrl || '',
-  })
+  const unitVal = document.getElementById('prod-unit')?.value?.trim() || 'each';
+  const availRaw = document.getElementById('prod-availability')?.value || 'In Season';
+  const availMap = { 'Available': 'in_season', 'In Season': 'in_season', 'Out of Season': 'out_of_season', 'Unavailable': 'out_of_season' };
+  const availability = availMap[availRaw] || 'in_season';
+  const harvestDate = document.getElementById('prod-harvest')?.value || new Date().toISOString().split('T')[0];
+  const organicVal = document.getElementById('prod-organic')?.value === 'true';
+  const selectedAllergens = Array.from(document.querySelectorAll('input[name="allergen"]:checked')).map(cb => cb.value);
+  const allergenNameMap = {
+    'Celery': 'Celery', 'Gluten': 'Cereals containing gluten', 'Crustaceans': 'Crustaceans',
+    'Eggs': 'Eggs', 'Fish': 'Fish', 'Lupin': 'Lupin', 'Milk': 'Milk', 'Molluscs': 'Molluscs',
+    'Mustard': 'Mustard', 'Nuts': 'Nuts', 'Peanuts': 'Peanuts', 'Sesame': 'Sesame',
+    'Soya': 'Soybeans', 'Sulphites': 'Sulphur dioxide'
+  };
+
+  get('/api/allergens/')
+    .then(allergens => {
+      const allergenIds = selectedAllergens.map(cbName => {
+        const dbName = allergenNameMap[cbName] || cbName;
+        const found = allergens.find(a => a.name === dbName);
+        return found ? found.id : null;
+      }).filter(Boolean);
+
+      return createProduct({
+        name,
+        description: description || '',
+        price: price,
+        category: categoryId,
+        stock_quantity: isNaN(stock) ? 1 : stock,
+        unit: unitVal,
+        availability: availability,
+        origin_location: 'Bristol, UK',
+        is_organic: organicVal,
+        storage_instructions: 'Store in a cool, dry place.',
+        harvest_date: harvestDate,
+        allergens: allergenIds,
+      });
+    })
     .then(() => Promise.all([
       loadCatalog(),
       getProducts({ mine: true }),
@@ -730,11 +882,15 @@ function handleAddProduct(e) {
       document.getElementById('prod-stock').value = '';
       const imgEl = document.getElementById('prod-image-url');
       if (imgEl) imgEl.value = '';
+      document.getElementById('prod-unit').value = '';
+      document.getElementById('prod-harvest').value = '';
+      document.getElementById('prod-organic').value = 'false';
+      document.querySelectorAll('input[name="allergen"]:checked').forEach(cb => cb.checked = false);
     })
     .catch(err => {
       showToast(apiErrorMessage(err, 'Could not add product. Check the backend and try again.'), 'error');
       const fieldErrors = typeof getFieldErrors === 'function' && err.body ? getFieldErrors(err.body) : {};
-      const map = { name: 'prod-name', category: 'prod-category', price: 'prod-price', stock: 'prod-stock', description: 'prod-desc' };
+      const map = { name: 'prod-name', category: 'prod-category', price: 'prod-price', stock_quantity: 'prod-stock', description: 'prod-desc' };
       Object.keys(fieldErrors).forEach(f => {
         const id = map[f];
         if (id) showFieldError(id, fieldErrors[f]);
@@ -742,11 +898,256 @@ function handleAddProduct(e) {
     });
 }
 
-function setProducerTab(tab) { state.producerDashTab = tab; renderProducerDash(); }
+
+function handleEditProduct(productId) {
+  const product = (state.producerProducts || []).find(p => p.id === Number(productId));
+  if (!product) {
+    showToast('Product not found.', 'error');
+    return;
+  }
+
+  const stockInput = window.prompt('Enter new stock quantity (0 or more):', String(product.stock ?? 0));
+  if (stockInput === null) return; // cancelled
+  const nextStock = parseInt(stockInput, 10);
+  if (!Number.isFinite(nextStock) || nextStock < 0) {
+    showToast('Stock quantity must be 0 or more.', 'error');
+    return;
+  }
+
+  const availabilityInput = window.prompt(
+    'Availability (In Season | Out of Season | Pre-Order):',
+    String(product.availability ?? 'In Season')
+  );
+  if (availabilityInput === null) return; // cancelled
+
+  const uiToRaw = {
+    'In Season': 'in_season',
+    'Out of Season': 'out_of_season',
+    'Pre-Order': 'pre_order',
+    // allow raw backend values too
+    in_season: 'in_season',
+    out_of_season: 'out_of_season',
+    pre_order: 'pre_order',
+  };
+  const chosenAvailability = uiToRaw[String(availabilityInput).trim()];
+  if (!chosenAvailability) {
+    showToast('Invalid availability. Use In Season, Out of Season, or Pre-Order.', 'error');
+    return;
+  }
+
+  const ok = window.confirm(
+    'Update product inventory?\n\n' +
+    `Stock: ${nextStock}\n` +
+    `Availability: ${availabilityInput}`
+  );
+  if (!ok) return;
+
+  updateProductInventory(productId, { stock_quantity: nextStock, availability: chosenAvailability })
+    .then(() => getProducts({ mine: true }))
+    .then((prods) => {
+      state.producerProducts = (prods || []).map(apiProductToUI);
+      renderProducerDash();
+      showToast('Product updated successfully.', 'success');
+    })
+    .catch((err) => {
+      showToast(apiErrorMessage(err, 'Could not update product. Check backend and try again.'), 'error');
+    });
+}
+
+// ---- Sprint 2: Orders wiring (backend may not exist yet) ----
+async function refreshProducerOrders() {
+  if (state.producerOrdersLoading) return;
+  state.producerOrdersLoading = true;
+
+  try {
+    const data = await getProducerOrders();
+    // Allow flexible backend shapes: array | { orders: [] } | { data: [] }
+    const orders =
+      Array.isArray(data) ? data :
+      (data && (data.orders || data.producer_orders || data.results || [])) || [];
+
+    state.producerOrders = Array.isArray(orders) ? orders : [];
+  } catch (err) {
+    state.producerOrders = [];
+    showToast(apiErrorMessage(err, 'Could not load producer orders.'), 'error');
+  } finally {
+    state.producerOrdersLoading = false;
+    renderProducerDash();
+  }
+}
+
+async function refreshCustomerOrders() {
+  if (state.customerOrdersLoading) return;
+  state.customerOrdersLoading = true;
+
+  try {
+    const data = await getCustomerOrderHistory();
+    const orders =
+      Array.isArray(data) ? data :
+      (data && (data.orders || data.results || data.customer_orders || [])) || [];
+
+    state.customerOrders = Array.isArray(orders) ? orders : [];
+  } catch (err) {
+    state.customerOrders = [];
+    showToast(apiErrorMessage(err, 'Could not load your order history.'), 'error');
+  } finally {
+    state.customerOrdersLoading = false;
+    renderCustomerDash();
+  }
+}
+
+function renderSettlementsReport(report) {
+  const summary = (report && report.summary) ? report.summary : (report || {});
+  const lines =
+    (report && Array.isArray(report.lines) && report.lines) ? report.lines :
+    (report && Array.isArray(report.settlements) && report.settlements) ? report.settlements :
+    (report && report.items && Array.isArray(report.items)) ? report.items :
+    summary.lines && Array.isArray(summary.lines) ? summary.lines :
+    [];
+
+  const formatMoney = (v) => {
+    const n = typeof v === 'string' ? parseFloat(v) : Number(v);
+    return '£' + (Number.isFinite(n) ? n : 0).toFixed(2);
+  };
+
+  const ordersCount =
+    summary.order_count ?? summary.orders_count ?? summary.total_orders ??
+    (Array.isArray(lines) ? lines.length : 0);
+
+  const networkCommission =
+    summary.commission_total ?? summary.network_commission ?? summary.commission ??
+    summary.commission_deducted ?? 0;
+
+  const yourPayment =
+    summary.your_payment_total ?? summary.your_payment ?? summary.payout ??
+    summary.your_share ?? summary.producer_payout ?? 0;
+
+  const elOrders = document.getElementById('pdash-settlement-orders');
+  const elComm = document.getElementById('pdash-settlement-commission');
+  const elPayout = document.getElementById('pdash-settlement-your-payment');
+  if (elOrders) elOrders.textContent = String(ordersCount || 0);
+  if (elComm) elComm.textContent = formatMoney(networkCommission);
+  if (elPayout) elPayout.textContent = formatMoney(yourPayment);
+
+  const tbody = document.getElementById('pdash-settlements-tbody');
+  if (!tbody) return;
+
+  if (!Array.isArray(lines) || lines.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted);font-size:14px">
+          No settlements yet. When customers place real orders (Sprint 2), their payouts will be summarised here.
+        </td>
+      </tr>`;
+    return;
+  }
+
+  const toItemsCount = (line) => {
+    if (!line) return '—';
+    if (Array.isArray(line.items)) return String(line.items.length);
+    return String(line.items_sold || line.items_count || line.item_count || '—');
+  };
+
+  const toOrderId = (line) =>
+    line.invoice_number || (line.order && line.order.invoice_number) || line.order_id || line.id || '—';
+  const toCustomer = (line) =>
+    line.customer_name || line.customer || (line.order && line.order.customer_name) || (line.order && line.order.customer) || '—';
+  const toDelivery = (line) =>
+    line.delivery_date || line.date || (line.order && line.order.delivery_date) || (line.order && line.order.delivery) || '—';
+  const toTotal = (line) =>
+    line.order_total ?? line.total_amount ?? line.total ?? (line.order && line.order.total_amount) ?? 0;
+  const toCommission = (line) =>
+    line.commission ?? line.commission_amount ?? 0;
+  const toPayout = (line) =>
+    line.payout ?? line.your_share ?? line.producer_payout ?? 0;
+
+  tbody.innerHTML = lines.map(line => `
+    <tr>
+      <td>${toOrderId(line)}</td>
+      <td style="font-size:12px">${toCustomer(line)}</td>
+      <td style="font-size:12px">${toDelivery(line)}</td>
+      <td style="font-size:12px">${toItemsCount(line)}</td>
+      <td style="font-weight:700">${formatMoney(toTotal(line))}</td>
+      <td style="font-weight:700; color: var(--gold)">${formatMoney(toCommission(line))}</td>
+      <td style="font-weight:700; color: var(--forest-mid)">${formatMoney(toPayout(line))}</td>
+    </tr>
+  `).join('');
+}
+
+async function refreshProducerSettlements() {
+  if (state.producerSettlementLoading) return;
+  state.producerSettlementLoading = true;
+  try {
+    const report = await getSettlementReport();
+    state.producerSettlementReport = report;
+    renderSettlementsReport(report);
+  } catch (err) {
+    state.producerSettlementReport = null;
+    // Leave existing "No settlements yet" UI in place; just toast.
+    showToast(apiErrorMessage(err, 'Could not load settlement report.'), 'error');
+  } finally {
+    state.producerSettlementLoading = false;
+  }
+}
+
+function handleReorder(orderId) {
+  reorderFromHistory(orderId)
+    .then((res) => {
+      // If backend returns cart data directly, use it; otherwise refetch cart.
+      if (res && res.items) {
+        setCartFromApiResponse(res);
+        return;
+      }
+      return getCart().then(setCartFromApiResponse);
+    })
+    .then(() => {
+      navigate('cart');
+      showToast('Reorder added to cart.', 'success');
+    })
+    .catch((err) => {
+      showToast(apiErrorMessage(err, 'Could not reorder from history.'), 'error');
+    });
+}
+
+function handleUpdateOrderStatus(orderId, nextStatus) {
+  if (orderId == null || nextStatus == null) {
+    showToast('Invalid order status update.', 'error');
+    return;
+  }
+
+  const ok = window.confirm(`Update order status to "${nextStatus}"?`);
+  if (!ok) return;
+
+  updateOrderStatus(orderId, { status: String(nextStatus).toLowerCase() })
+    .then(() => {
+      showToast('Order status updated.', 'success');
+      refreshProducerOrders();
+    })
+    .catch((err) => {
+      showToast(apiErrorMessage(err, 'Could not update order status.'), 'error');
+    });
+}
+
+async function handleDownloadSettlementCSV() {
+  try {
+    await downloadSettlementReport();
+    showToast('Settlement download started.', 'success');
+  } catch (err) {
+    showToast(apiErrorMessage(err, 'Could not download settlement CSV.'), 'error');
+  }
+}
+
+function setProducerTab(tab) {
+  state.producerDashTab = tab;
+  renderProducerDash();
+  if (!state.currentUser || state.currentUser.role !== 'producer') return;
+  if (tab === 'orders' || tab === 'overview') refreshProducerOrders();
+  if (tab === 'payments') refreshProducerSettlements();
+}
 
 // ---- CUSTOMER DASHBOARD ----
 // Customer orders: from API when available (Sprint 2); no mock data for new accounts
-const CUSTOMER_ORDERS = [];
+const CUSTOMER_ORDERS = []; // legacy placeholder (no longer used)
 
 function renderCustomerDash() {
   document.querySelectorAll('#customer-sidebar li').forEach(li => li.classList.toggle('active', li.dataset.tab === state.customerDashTab));
@@ -762,11 +1163,17 @@ function renderCustomerDash() {
     if (nameInput) nameInput.value = state.currentUser.name;
     const emailInput = document.getElementById('cdash-profile-email');
     if (emailInput) emailInput.value = state.currentUser.email;
+    const phoneInput = document.getElementById('cdash-profile-phone');
+    if (phoneInput) phoneInput.value = state.currentUser.phone || '';
+    const addressInput = document.getElementById('cdash-profile-address');
+    if (addressInput) addressInput.value = state.currentUser.deliveryAddress || '';
+    const postcodeInput = document.getElementById('cdash-profile-postcode');
+    if (postcodeInput) postcodeInput.value = state.currentUser.postcode || '';
   }
 
   const ordTable = document.getElementById('cdash-orders-table');
   if (ordTable) {
-    const orders = CUSTOMER_ORDERS || [];
+    const orders = state.customerOrders || [];
     if (orders.length === 0) {
       ordTable.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted);font-size:15px">You haven’t placed any orders yet. When you checkout, your orders will appear here.</td></tr>';
     } else {
@@ -777,13 +1184,36 @@ function renderCustomerDash() {
           <td style="font-size:12px">${o.items}</td>
           <td style="font-weight:700">£${o.total.toFixed(2)}</td>
           <td><span class="status-pill status-${(o.status || '').toLowerCase()}">${o.status}</span></td>
-          <td><button class="btn btn-secondary btn-sm" onclick="showToast('Items added to cart!','success')">Reorder</button></td>
+          <td><button class="btn btn-secondary btn-sm" onclick="handleReorder(${o.id})">Reorder</button></td>
         </tr>`).join('');
     }
   }
 }
 
-function setCustomerTab(tab) { state.customerDashTab = tab; renderCustomerDash(); }
+function handleUpdateProfile() {
+  const data = {
+    full_name: (document.getElementById('cdash-profile-name')?.value || '').trim(),
+    phone_number: (document.getElementById('cdash-profile-phone')?.value || '').trim(),
+    delivery_address: (document.getElementById('cdash-profile-address')?.value || '').trim(),
+    postcode: (document.getElementById('cdash-profile-postcode')?.value || '').trim(),
+  };
+  if (!data.full_name) { showToast('Full name is required.', 'error'); return; }
+  updateProfile(data)
+    .then(profile => {
+      state.currentUser = profileToUser(profile);
+      renderAuthNavbar();
+      renderCustomerDash();
+      showToast('Profile updated!', 'success');
+    })
+    .catch(err => showToast(apiErrorMessage(err, 'Could not update profile.'), 'error'));
+}
+
+function setCustomerTab(tab) {
+  state.customerDashTab = tab;
+  renderCustomerDash();
+  if (!state.currentUser || state.currentUser.role !== 'customer') return;
+  if (tab === 'orders') refreshCustomerOrders();
+}
 
 // ---- INIT ----
 function loadCatalog() {
@@ -803,14 +1233,49 @@ function loadCatalog() {
 }
 
 function initAuthAndCart() {
+  get('/api/auth/csrf/').catch(() => {});
   getProfile()
     .then(profile => {
       state.currentUser = profileToUser(profile);
       renderAuthNavbar();
-      if (state.currentUser.role === 'customer') return getCart().then(setCartFromApiResponse);
+      if (state.currentUser.role === 'customer') {
+        return getCart()
+          .then(setCartFromApiResponse)
+          .then(() => refreshCustomerOrders());
+      } else if (state.currentUser.role === 'producer') {
+        return getProducts({ mine: true })
+          .then(prods => {
+            state.producerProducts = (prods || []).map(apiProductToUI);
+          })
+          .then(() => refreshProducerOrders());
+      }
     })
     .catch(() => { state.currentUser = null; renderAuthNavbar(); })
     .finally(() => updateCartUI());
+}
+
+// ---- BROWSE SEARCH (Sprint 2: server-backed + debounced) ----
+let browseSearchDebounceTimer = null;
+async function loadBrowseProductsForSearch(query) {
+  const q = (query || '').toString().trim();
+
+  // Reload full catalog when search is cleared (keeps category grid/category counts in sync).
+  if (!q) {
+    await loadCatalog();
+    renderBrowse();
+    return;
+  }
+
+  // Category is numeric in the generated browse grid; ignore non-numeric values (home page uses strings).
+  const catCandidate = state.currentCategory;
+  const categoryId = catCandidate !== 'all' ? parseInt(catCandidate, 10) : NaN;
+
+  const params = { search: q };
+  if (!Number.isNaN(categoryId)) params.category = categoryId;
+
+  const prods = await getProducts(params);
+  state.products = (prods || []).map(apiProductToUI);
+  renderBrowse();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -820,7 +1285,19 @@ document.addEventListener('DOMContentLoaded', () => {
   initAuthAndCart();
 
   const searchInput = document.getElementById('search-input');
-  if (searchInput) searchInput.addEventListener('input', e => { state.searchQuery = e.target.value; if (state.currentPage === 'browse') renderBrowse(); });
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      const next = e.target.value;
+      state.searchQuery = next;
+      if (state.currentPage !== 'browse') return;
+
+      if (browseSearchDebounceTimer) clearTimeout(browseSearchDebounceTimer);
+      browseSearchDebounceTimer = setTimeout(() => {
+        loadBrowseProductsForSearch(next)
+          .catch(() => showToast('Could not search products. Check backend and try again.', 'error'));
+      }, 300);
+    });
+  }
   const pwInput = document.getElementById('reg-password');
   if (pwInput) pwInput.addEventListener('input', () => checkPasswordStrength(pwInput.value));
 });
