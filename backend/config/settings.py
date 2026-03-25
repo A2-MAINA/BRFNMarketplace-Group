@@ -43,6 +43,9 @@ INSTALLED_APPS = [
     # Third-party packages
     'rest_framework',
     'corsheaders',
+    'django_filters',
+ 
+
 
     # Project apps
     'users',
@@ -80,21 +83,8 @@ TEMPLATES = [
     },
 ]
 
-# CORS configuration (frontend on 3025, backend on 8025 = cross-origin)
-# When using credentials: 'include', browser requires Access-Control-Allow-Credentials: true
-# and a specific Allow-Origin (not *), so we list frontend origins explicitly.
-CORS_ALLOW_ALL_ORIGINS = False
-CORS_ALLOWED_ORIGINS = [
-    'http://localhost:3025',
-    'http://127.0.0.1:3025',
-]
-CORS_ALLOW_CREDENTIALS = True
-
-# Allow POST from frontend origin without CSRF token (same host, different port = cross-origin)
-CSRF_TRUSTED_ORIGINS = [
-    'http://localhost:3025',
-    'http://127.0.0.1:3025',
-]
+# CORS configuration
+# CORS not needed — Nginx proxies API requests on same origin
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
@@ -102,16 +92,24 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME', 'brfn_db'),
-        'USER': os.environ.get('DB_USER', 'brfn_user'),
-        'PASSWORD': os.environ.get('DB_PASSWORD', 'brfn_password'),
-        'HOST': os.environ.get('DB_HOST', 'db'),
-        'PORT': os.environ.get('DB_PORT', '5432'),
+if os.environ.get('DB_HOST'):
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.environ.get('DB_NAME', 'brfn_db'),
+            'USER': os.environ.get('DB_USER', 'brfn_user'),
+            'PASSWORD': os.environ.get('DB_PASSWORD', 'brfn_password'),
+            'HOST': os.environ.get('DB_HOST', 'db'),
+            'PORT': os.environ.get('DB_PORT', '5432'),
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 
 # Password validation
@@ -154,10 +152,10 @@ STATIC_URL = 'static/'
 # Custom User Model
 AUTH_USER_MODEL = 'users.User'
 
-# DRF: session auth without CSRF so SPA (different origin) can login/register/logout
+# Django REST Framework configuration
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'config.auth.SessionAuthenticationNoCSRF',
+        'users.authentication.CsrfExemptSessionAuthentication',
     ],
 }
 
@@ -165,3 +163,4 @@ REST_FRAMEWORK = {
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+

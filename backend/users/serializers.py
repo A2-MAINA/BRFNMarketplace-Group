@@ -1,161 +1,237 @@
-from django.contrib.auth import get_user_model, authenticate
-from django.contrib.auth.password_validation import validate_password
-from django.utils import timezone
 from rest_framework import serializers
-
+from django.contrib.auth import get_user_model, authenticate
+from django.db import transaction
+from django.utils import timezone
 from .models import ProducerProfile, CustomerProfile
-
-
-# Eugene Dalla — Backend API & Business Logic: auth + profile serializers
 
 User = get_user_model()
 
 
-class ProducerRegisterSerializer(serializers.Serializer):
-    email = serializers.EmailField()
-    password = serializers.CharField(write_only=True)
+# ============================
+# Basic User Serializer (Response Only)
+# ============================
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'email', 'role']
+        read_only_fields = ['id', 'email', 'role']
+
+
+# ============================
+# Producer Registration (TC-001)
+# ============================
+
+class ProducerRegistrationSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, min_length=8)
     password_confirm = serializers.CharField(write_only=True)
 
-    business_name = serializers.CharField()
-    contact_name = serializers.CharField()
-    phone_number = serializers.CharField(allow_blank=True, required=False)
+    # ProducerProfile fields
+    business_name = serializers.CharField(max_length=200)
+    contact_name = serializers.CharField(max_length=200)
+    phone_number = serializers.CharField(
+        max_length=20,
+        required=False,
+        allow_blank=True
+    )
     address = serializers.CharField()
-    postcode = serializers.CharField()
-    crn = serializers.CharField(allow_blank=True, required=False)
-    description = serializers.CharField(allow_blank=True, required=False)
-    food_hygiene_rating = serializers.IntegerField(required=False, allow_null=True)
+    postcode = serializers.CharField(max_length=10)
 
-    def validate_email(self, value):
-        if User.objects.filter(email__iexact=value).exists():
-            raise serializers.ValidationError("Email already in use.")
-        return value
+    class Meta:
+        model = User
+        fields = [
+            'email',
+            'password',
+            'password_confirm',
+            'business_name',
+            'contact_name',
+            'phone_number',
+            'address',
+            'postcode',
+        ]
 
-    def validate(self, attrs):
-        if attrs["password"] != attrs["password_confirm"]:
-            raise serializers.ValidationError({"password_confirm": "Passwords do not match."})
-        validate_password(attrs["password"])
-        return attrs
+    def validate(self, data):
+        if data['password'] != data['password_confirm']:
+            raise serializers.ValidationError(
+                {"password_confirm": "Passwords do not match."}
+            )
+        return data
 
+    @transaction.atomic
     def create(self, validated_data):
-        validated_data.pop("password_confirm")
-        password = validated_data.pop("password")
+        # Remove profile + confirm fields before creating User
+        password = validated_data.pop('password')
+        validated_data.pop('password_confirm')
+
+        business_name = validated_data.pop('business_name')
+        contact_name = validated_data.pop('contact_name')
+        phone_number = validated_data.pop('phone_number', '')
+        address = validated_data.pop('address')
+        postcode = validated_data.pop('postcode')
+
+        # Use email as username to ensure uniqueness
+        email = validated_data['email']
+        username = email
 
         user = User.objects.create_user(
-            email=validated_data["email"],
+            email=email,
+            username=username,
             password=password,
-            role="producer",
+            role='producer'
         )
 
         ProducerProfile.objects.create(
             user=user,
-            business_name=validated_data["business_name"],
-            contact_name=validated_data["contact_name"],
-            phone_number=validated_data.get("phone_number", ""),
-            address=validated_data["address"],
-            postcode=validated_data["postcode"],
-            crn=validated_data.get("crn", ""),
-            description=validated_data.get("description", ""),
-            food_hygiene_rating=validated_data.get("food_hygiene_rating"),
+            business_name=business_name,
+            contact_name=contact_name,
+            phone_number=phone_number,
+            address=address,
+            postcode=postcode
         )
 
         return user
 
 
-class CustomerRegisterSerializer(serializers.Serializer):
-    email = serializers.EmailField()
-    password = serializers.CharField(write_only=True)
+# ============================
+# Customer Registration (TC-002)
+# ============================
+
+class CustomerRegistrationSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, min_length=8)
     password_confirm = serializers.CharField(write_only=True)
 
-    first_name = serializers.CharField()
-    last_name = serializers.CharField()
-    phone_number = serializers.CharField(allow_blank=True, required=False)
+    # CustomerProfile fields
+    full_name = serializers.CharField(max_length=200)
+    phone_number = serializers.CharField(
+        max_length=20,
+        required=False,
+        allow_blank=True
+    )
     delivery_address = serializers.CharField()
-    postcode = serializers.CharField()
+    postcode = serializers.CharField(max_length=10)
     terms_accepted = serializers.BooleanField()
 
-    def validate_email(self, value):
-        if User.objects.filter(email__iexact=value).exists():
-            raise serializers.ValidationError("Email already in use.")
-        return value
+    class Meta:
+        model = User
+        fields = [
+            'email',
+            'password',
+            'password_confirm',
+            'full_name',
+            'phone_number',
+            'delivery_address',
+            'postcode',
+            'terms_accepted',
+        ]
 
-    def validate(self, attrs):
-        if attrs["password"] != attrs["password_confirm"]:
-            raise serializers.ValidationError({"password_confirm": "Passwords do not match."})
-        if not attrs.get("terms_accepted"):
-            raise serializers.ValidationError({"terms_accepted": "You must accept the terms and conditions."})
-        validate_password(attrs["password"])
-        return attrs
+    def validate(self, data):
+        if data['password'] != data['password_confirm']:
+            raise serializers.ValidationError(
+                {"password_confirm": "Passwords do not match."}
+            )
 
+        if not data.get('terms_accepted'):
+            raise serializers.ValidationError(
+                {"terms_accepted": "You must accept the terms and conditions."}
+            )
+
+        return data
+
+    @transaction.atomic
     def create(self, validated_data):
-        validated_data.pop("password_confirm")
-        password = validated_data.pop("password")
+        password = validated_data.pop('password')
+        validated_data.pop('password_confirm')
 
-        terms_accepted = validated_data.pop("terms_accepted")
+        full_name = validated_data.pop('full_name')
+        phone_number = validated_data.pop('phone_number', '')
+        delivery_address = validated_data.pop('delivery_address')
+        postcode = validated_data.pop('postcode')
+        terms_accepted = validated_data.pop('terms_accepted')
+
+        # Use email as username to ensure uniqueness
+        email = validated_data['email']
+        username = email
 
         user = User.objects.create_user(
-            email=validated_data["email"],
+            email=email,
+            username=username,
             password=password,
-            role="customer",
-            first_name=validated_data["first_name"].strip(),
-            last_name=validated_data["last_name"].strip(),
+            role='customer'
         )
 
-        full_name = f"{validated_data['first_name'].strip()} {validated_data['last_name'].strip()}".strip()
         CustomerProfile.objects.create(
             user=user,
             full_name=full_name,
-            phone_number=validated_data.get("phone_number", ""),
-            delivery_address=validated_data["delivery_address"],
-            postcode=validated_data["postcode"],
+            phone_number=phone_number,
+            delivery_address=delivery_address,
+            postcode=postcode,
             terms_accepted=terms_accepted,
-            terms_accepted_at=timezone.now() if terms_accepted else None,
+            terms_accepted_at=timezone.now()
         )
 
         return user
 
+
+# ============================
+# Login Serializer (TC-022)
+# ============================
 
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
 
-    # Eugene Dalla — Backend API: login endpoint
-    def validate(self, attrs):
-        user = authenticate(email=attrs["email"], password=attrs["password"])
-        if not user:
-            raise serializers.ValidationError("Invalid credentials.")
-        if not user.is_active:
-            raise serializers.ValidationError("Account is inactive.")
-        attrs["user"] = user
-        return attrs
+    def validate(self, data):
+        email = data.get('email')
+        password = data.get('password')
 
+        user = authenticate(username=email, password=password)
+
+        if not user:
+            raise serializers.ValidationError(
+                "Invalid email or password."
+            )
+
+        if not user.is_active:
+            raise serializers.ValidationError(
+                "Account is disabled."
+            )
+
+        data['user'] = user
+        return data
+
+
+# ============================
+# User Profile Serializer (Profile View)
+# ============================
+
+class ProducerProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProducerProfile
+        fields = ['business_name', 'contact_name', 'phone_number', 'address', 'postcode', 'crn','description', 'food_hygiene_rating', 'created_at']
+
+class CustomerProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomerProfile
+        fields = ['full_name', 'phone_number', 'delivery_address', 'postcode', 'terms_accepted', 'terms_accepted_at', 'created_at']
+        read_only_fields = ['terms_accepted', 'terms_accepted_at', 'created_at']
 
 class UserProfileSerializer(serializers.ModelSerializer):
-    # Eugene Dalla — Backend API: profile payload for frontend
-    role = serializers.CharField(read_only=True)
-    # Display name from role-specific profile (customer full_name, producer contact_name)
-    name = serializers.SerializerMethodField()
-    business_name = serializers.SerializerMethodField()
+    producer_profile = ProducerProfileSerializer(read_only=True)
+    customer_profile = CustomerProfileSerializer(read_only=True)
 
     class Meta:
         model = User
-        fields = ["id", "email", "role", "first_name", "last_name", "name", "business_name"]
+        fields = ['id', 'email', 'role', 'producer_profile', 'customer_profile', 'date_joined']
 
-    def get_name(self, user):
-        if user.role == "customer":
-            # Prefer User.first_name/last_name (DB columns); fallback to profile.full_name for legacy
-            full = " ".join(p for p in [user.first_name, user.last_name] if p).strip()
-            if full:
-                return full
-            if hasattr(user, "customer_profile"):
-                return user.customer_profile.full_name
-            return user.email
-        if user.role == "producer" and hasattr(user, "producer_profile"):
-            return user.producer_profile.contact_name
-        parts = [user.first_name, user.last_name]
-        return " ".join(p for p in parts if p).strip() or user.email
 
-    def get_business_name(self, user):
-        if user.role == "producer" and hasattr(user, "producer_profile"):
-            return user.producer_profile.business_name
-        return None
+class CustomerProfileUpdateSerializer(serializers.Serializer):
+    full_name = serializers.CharField(max_length=255, required=False)
+    phone_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    delivery_address = serializers.CharField(required=False)
+    postcode = serializers.CharField(max_length=10, required=False)
 
+    def update(self, profile, validated_data):
+        for field, value in validated_data.items():
+            setattr(profile, field, value)
+        profile.save()
+        return profile

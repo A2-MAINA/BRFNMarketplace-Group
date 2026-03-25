@@ -32,6 +32,10 @@ function apiProductToUI(apiP) {
     ? apiP.allergens.map(a => typeof a === 'object' ? a.name : a)
     : [];
   const producerName = apiP.producer_business_name || 'Local producer';
+  const producerId =
+    apiP.producer != null
+      ? (typeof apiP.producer === 'object' && apiP.producer ? apiP.producer.id : apiP.producer)
+      : null;
   const initials = producerName.split(' ').map(w => w[0]).join('').toUpperCase().substring(0, 2);
   const availMap = { 'in_season': 'In Season', 'out_of_season': 'Out of Season', 'pre_order': 'Pre-Order' };
   return {
@@ -43,6 +47,7 @@ function apiProductToUI(apiP) {
     category_name: catName,
     unit: apiP.unit || 'each',
     producer: producerName,
+    producerId: producerId != null ? Number(producerId) : null,
     producerInitial: initials,
     availability: availMap[apiP.availability] || apiP.availability || 'Available',
     stock: apiP.stock_quantity || 0,
@@ -104,6 +109,9 @@ const state = {
   customerOrdersLoading: false,
   producerSettlementReport: null,
   producerSettlementLoading: false,
+  checkout: {
+    stripeProcessing: false,
+  },
 };
 
 // ---- CART ----
@@ -123,12 +131,18 @@ function setCartFromApiResponse(data) {
 }
 
 function addToCart(productId, qty = 1) {
-  const product = state.products.find(p => p.id === Number(productId));
-  if (!product) { showToast('Product not found', 'error'); return; }
+  const numericId = Number(productId);
+  const product =
+    state.products.find(p => Number(p.id) === numericId) ||
+    (state.currentProduct && Number(state.currentProduct.id) === numericId ? state.currentProduct : null);
+
+  // Even if the product isn't in `state.products` (occasionally happens during navigation/refresh),
+  // the cart endpoint can still validate the product id, so we should still attempt to add.
   if (state.currentUser && state.currentUser.role === 'customer') {
     addOrUpdateCartItem(productId, qty).then(data => {
       setCartFromApiResponse(data);
-      showToast(`${product.name} added to cart`, 'success');
+      const name = product && product.name ? product.name : 'Item';
+      showToast(`${name} added to cart`, 'success');
     }).catch(err => showToast(apiErrorMessage(err, 'Could not add to cart'), 'error'));
     return;
   }
@@ -187,9 +201,9 @@ function showToast(msg, type = '') {
 /** Never show raw "Failed to fetch" — use friendly message for network errors. */
 function apiErrorMessage(err, fallback) {
   const msg = err && err.message ? err.message : fallback || 'Something went wrong.';
-  if (msg === 'Failed to fetch' || (err && err.status === undefined && !err.body)) {
-    return 'Network error. Please check the backend is running and try again.';
-  }
+  // Only map true fetch/network errors to the generic message.
+  // Other app errors (e.g. missing Stripe keys) should show their actual message.
+  if (msg === 'Failed to fetch') return 'Network error. Please check the backend is running and try again.';
   return msg;
 }
 
@@ -220,6 +234,7 @@ function navigate(page, extra) {
     }
   }
   if (page === 'customer-dash') renderCustomerDash();
+  if (page === 'admin-dash') renderAdminDash();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -452,9 +467,187 @@ function renderCart() {
   }
 }
 
+let stripeInstance = null;
+let stripeElements = null;
+let stripeCard = null;
+let stripeCardInitialized = false;
+
+function closeCheckoutModal() {
+  const overlay = document.getElementById('checkout-overlay');
+  if (overlay) overlay.classList.add('hidden');
+
+  const errorEl = document.getElementById('stripe-card-error');
+  if (errorEl) errorEl.textContent = '';
+  const dateErrEl = document.getElementById('checkout-delivery-date-err');
+  if (dateErrEl) dateErrEl.textContent = '';
+}
+
+function openCheckoutModal() {
+  const overlay = document.getElementById('checkout-overlay');
+  if (overlay) overlay.classList.remove('hidden');
+}
+
+function ensureStripeInitialized() {
+  const keyMeta = document.querySelector('meta[name="brfn-stripe-publishable-key"]');
+  const publishableKey = keyMeta ? keyMeta.getAttribute('content') : null;
+
+  if (!publishableKey || !publishableKey.trim() || publishableKey.includes('REPLACE_ME')) {
+    throw new Error('Set your Stripe test publishable key in frontend/index.html (meta brfn-stripe-publishable-key).');
+  }
+  if (typeof Stripe === 'undefined') {
+    throw new Error('Stripe.js failed to load. Check network access to https://js.stripe.com/v3/.');
+  }
+
+  if (stripeCardInitialized) return;
+  stripeInstance = Stripe(publishableKey.trim());
+  stripeElements = stripeInstance.elements();
+  stripeCard = stripeElements.create('card');
+  stripeCard.mount('#stripe-card-element');
+
+  stripeCardInitialized = true;
+  stripeCard.addEventListener('change', (event) => {
+    const errorEl = document.getElementById('stripe-card-error');
+    if (!errorEl) return;
+    errorEl.textContent = event.error ? event.error.message : '';
+  });
+}
+
+function getMinDeliveryDateStr(plusDays = 2) {
+  const d = new Date();
+  d.setDate(d.getDate() + plusDays);
+  return d.toISOString().split('T')[0];
+}
+
 function handleCheckout() {
-  if (!state.currentUser) { showToast('Please log in to checkout', 'error'); navigate('login'); }
-  else showToast('Checkout coming in Sprint 2', '');
+  if (!state.currentUser) {
+    showToast('Please log in to checkout', 'error');
+    navigate('login');
+    return;
+  }
+  if (state.currentUser.role !== 'customer') {
+    showToast('Producers cannot check out.', 'error');
+    return;
+  }
+  if (!state.cart || state.cart.length === 0) {
+    showToast('Your cart is empty.', 'error');
+    navigate('browse');
+    return;
+  }
+
+  // Default delivery date: at least 48 hours from now.
+  const minDate = getMinDeliveryDateStr(2);
+  const dateInput = document.getElementById('checkout-delivery-date');
+  if (dateInput) {
+    dateInput.min = minDate;
+    if (!dateInput.value) dateInput.value = minDate;
+  }
+
+  try {
+    ensureStripeInitialized();
+  } catch (err) {
+    showToast(apiErrorMessage(err, 'Stripe setup error'), 'error');
+    return;
+  }
+
+  openCheckoutModal();
+}
+
+async function handleStripePay() {
+  if (!state.currentUser || state.currentUser.role !== 'customer') {
+    showToast('Please log in as a customer to pay.', 'error');
+    return;
+  }
+  if (!stripeInstance || !stripeCard) {
+    showToast('Stripe is not ready yet.', 'error');
+    return;
+  }
+
+  if (state.checkout && state.checkout.stripeProcessing) return;
+  if (!state.checkout) state.checkout = {};
+  state.checkout.stripeProcessing = true;
+
+  const payBtn = document.getElementById('stripe-pay-btn');
+  if (payBtn) payBtn.disabled = true;
+
+  try {
+    const dateInput = document.getElementById('checkout-delivery-date');
+    const deliveryDate = dateInput ? dateInput.value : '';
+    if (!deliveryDate) {
+      showToast('Select a delivery date.', 'error');
+      return;
+    }
+
+    const deliveryAddress = state.currentUser.deliveryAddress || '';
+    const deliveryPostcode = state.currentUser.postcode || '';
+    if (!deliveryAddress || !deliveryPostcode) {
+      showToast('Delivery address and postcode are required for checkout.', 'error');
+      return;
+    }
+
+    // Build producer_groups payload required by backend OrderCreateSerializer.
+    const groupsByProducerId = {};
+    for (const item of state.cart) {
+      const producerId = item.producerId;
+      if (!producerId) {
+        throw new Error('Cart item is missing producerId. Try reloading products/cart.');
+      }
+      const key = String(producerId);
+      if (!groupsByProducerId[key]) {
+        groupsByProducerId[key] = {
+          producer_id: Number(producerId),
+          fulfilment_type: 'standard',
+          delivery_date: deliveryDate,
+          items: [],
+        };
+      }
+      groupsByProducerId[key].items.push({
+        product_id: Number(item.id),
+        quantity: Number(item.qty || 1),
+      });
+    }
+
+    const orderData = {
+      delivery_address: deliveryAddress,
+      delivery_postcode: deliveryPostcode,
+      special_instructions: '',
+      producer_groups: Object.values(groupsByProducerId),
+    };
+
+    showToast('Creating order…', '');
+    const order = await createOrder(orderData);
+
+    const payment = await createPaymentIntent(order.id);
+    const clientSecret = payment && payment.client_secret;
+    if (!clientSecret) throw new Error('Backend did not return client_secret.');
+
+    const result = await stripeInstance.confirmCardPayment(clientSecret, {
+      payment_method: { card: stripeCard },
+    });
+
+    if (result.error) {
+      showToast(result.error.message || 'Payment failed.', 'error');
+      return;
+    }
+
+    const paymentIntentId = result.paymentIntent && result.paymentIntent.id;
+    if (!paymentIntentId) throw new Error('Payment succeeded but paymentIntent id is missing.');
+
+    await notifyBackend(paymentIntentId, order.id);
+    showToast('Payment successful! Your order is confirmed.', 'success');
+    closeCheckoutModal();
+
+    // Clear cart UI + backend cart.
+    await clearCart();
+    const cart = await getCart();
+    setCartFromApiResponse(cart);
+
+    navigate('customer-dash');
+  } catch (err) {
+    showToast(apiErrorMessage(err, 'Checkout failed.'), 'error');
+  } finally {
+    state.checkout.stripeProcessing = false;
+    if (payBtn) payBtn.disabled = false;
+  }
 }
 
 // ---- AUTH ----
@@ -470,7 +663,7 @@ function renderAuthNavbar() {
         Cart
         <span class="cart-count hidden" id="cart-count">0</span>
       </button>
-      <div class="user-pill" onclick="navigate('${state.currentUser.role === 'producer' ? 'producer-dash' : 'customer-dash'}')">
+      <div class="user-pill" onclick="navigate('${state.currentUser.role === 'admin' ? 'admin-dash' : (state.currentUser.role === 'producer' ? 'producer-dash' : 'customer-dash')}')">
         <div class="user-avatar">${initials}</div>
         <span class="user-name">${state.currentUser.name.split(' ')[0]}</span>
       </div>
@@ -681,11 +874,23 @@ function renderProducerDash() {
   const toOrderId = (o) => (o && (o.invoice_number || o.id)) ? String(o.invoice_number || o.id) : '—';
   const toCustomerName = (o) => {
     if (!o) return '—';
-    return String(o.customer_name || o.customer || (o.customer && o.customer.name) || '—');
+    if (o.customer_name) return String(o.customer_name);
+    if (o.customer && typeof o.customer === 'object') return String(o.customer.name || o.customer.email || '—');
+    if (o.customer) return String(o.customer);
+    return '—';
   };
   const toDate = (o) => (o && (o.created_at || o.order_date || o.date)) ? String(o.created_at || o.order_date || o.date) : '—';
   const toDeliveryDate = (o) => (o && (o.delivery_date || o.delivery)) ? String(o.delivery_date || o.delivery) : '—';
-  const toTotal = (o) => (o && (o.total_amount || o.total || o.gross_total)) != null ? (o.total_amount || o.total || o.gross_total) : 0;
+  const toTotal = (o) => {
+    // Producer orders endpoint returns per-group subtotal + delivery_fee.
+    const subtotal = o && o.subtotal != null ? o.subtotal : (o && o.total_amount != null ? o.total_amount : 0);
+    const deliveryFee = o && o.delivery_fee != null ? o.delivery_fee : 0;
+    const n1 = typeof subtotal === 'string' ? parseFloat(subtotal) : Number(subtotal);
+    const n2 = typeof deliveryFee === 'string' ? parseFloat(deliveryFee) : Number(deliveryFee);
+    const safe1 = Number.isFinite(n1) ? n1 : 0;
+    const safe2 = Number.isFinite(n2) ? n2 : 0;
+    return safe1 + safe2;
+  };
   const toStatus = (o) => (o && o.status) ? String(o.status) : 'pending';
   const toUpdateId = (o) => (o && (o.id || o.order_id || o.pk)) ? String(o.id || o.order_id || o.pk) : null;
 
@@ -744,7 +949,7 @@ function renderProducerDash() {
     if (Array.isArray(state.producerOrders)) {
       const delivered = state.producerOrders.filter(o => String((o && o.status) || '').toLowerCase() === 'delivered');
       const revenue = delivered.reduce((sum, o) => {
-        const t = toTotal(o);
+        const t = o && o.producer_payout != null ? o.producer_payout : (o && o.total_amount != null ? o.total_amount : 0);
         const n = typeof t === 'string' ? parseFloat(t) : Number(t);
         return sum + (Number.isFinite(n) ? n : 0);
       }, 0);
@@ -898,6 +1103,7 @@ function handleAddProduct(e) {
     });
 }
 
+// ---- Sprint 2: Orders / Settlements / Reorder Wiring ----
 
 function handleEditProduct(productId) {
   const product = (state.producerProducts || []).find(p => p.id === Number(productId));
@@ -907,7 +1113,7 @@ function handleEditProduct(productId) {
   }
 
   const stockInput = window.prompt('Enter new stock quantity (0 or more):', String(product.stock ?? 0));
-  if (stockInput === null) return; // cancelled
+  if (stockInput === null) return;
   const nextStock = parseInt(stockInput, 10);
   if (!Number.isFinite(nextStock) || nextStock < 0) {
     showToast('Stock quantity must be 0 or more.', 'error');
@@ -918,7 +1124,7 @@ function handleEditProduct(productId) {
     'Availability (In Season | Out of Season | Pre-Order):',
     String(product.availability ?? 'In Season')
   );
-  if (availabilityInput === null) return; // cancelled
+  if (availabilityInput === null) return;
 
   const uiToRaw = {
     'In Season': 'in_season',
@@ -949,23 +1155,17 @@ function handleEditProduct(productId) {
       renderProducerDash();
       showToast('Product updated successfully.', 'success');
     })
-    .catch((err) => {
-      showToast(apiErrorMessage(err, 'Could not update product. Check backend and try again.'), 'error');
-    });
+    .catch((err) => showToast(apiErrorMessage(err, 'Could not update product.'), 'error'));
 }
 
-// ---- Sprint 2: Orders wiring (backend may not exist yet) ----
 async function refreshProducerOrders() {
   if (state.producerOrdersLoading) return;
   state.producerOrdersLoading = true;
+  state.producerOrders = null; // triggers loading state in renderProducerDash
 
   try {
     const data = await getProducerOrders();
-    // Allow flexible backend shapes: array | { orders: [] } | { data: [] }
-    const orders =
-      Array.isArray(data) ? data :
-      (data && (data.orders || data.producer_orders || data.results || [])) || [];
-
+    const orders = Array.isArray(data) ? data : (data && (data.orders || data.results)) ? (data.orders || data.results) : [];
     state.producerOrders = Array.isArray(orders) ? orders : [];
   } catch (err) {
     state.producerOrders = [];
@@ -976,16 +1176,120 @@ async function refreshProducerOrders() {
   }
 }
 
+function renderSettlementsReport(report) {
+  const summary = report || {};
+  const formatMoney = (v) => {
+    const n = typeof v === 'string' ? parseFloat(v) : Number(v);
+    const safe = Number.isFinite(n) ? n : 0;
+    return '£' + safe.toFixed(2);
+  };
+
+  const elOrders = document.getElementById('pdash-settlement-orders');
+  const elComm = document.getElementById('pdash-settlement-commission');
+  const elPayout = document.getElementById('pdash-settlement-your-payment');
+  if (elOrders) elOrders.textContent = String(summary.total_orders ?? summary.orders_count ?? 0);
+  if (elComm) elComm.textContent = formatMoney(summary.commission ?? summary.total_commission ?? 0);
+  if (elPayout) elPayout.textContent = formatMoney(summary.net_payout ?? summary.total_payout ?? summary.your_payment ?? 0);
+
+  const tbody = document.getElementById('pdash-settlements-tbody');
+  if (!tbody) return;
+
+  const lines = Array.isArray(summary.orders) ? summary.orders : [];
+  if (lines.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted);font-size:14px">
+          No settlements yet. When customers place real orders (Sprint 2), their payouts will be summarised here.
+        </td>
+      </tr>`;
+    return;
+  }
+
+  const toItemsCount = (line) => line.items_sold ?? line.items_count ?? line.items ?? '—';
+  const toInvoice = (line) => line.invoice_number ?? line.order_id ?? line.id ?? '—';
+  const toCustomer = (line) => line.customer_name ?? '—';
+  const toDelivery = (line) => line.delivery_date ?? '—';
+  const toSubtotal = (line) => line.subtotal ?? 0;
+  const toCommission = (line) => line.commission ?? 0;
+  const toPayout = (line) => line.producer_payout ?? 0;
+
+  tbody.innerHTML = lines.map(line => `
+    <tr>
+      <td>${toInvoice(line)}</td>
+      <td style="font-size:12px">${toCustomer(line)}</td>
+      <td style="font-size:12px">${toDelivery(line)}</td>
+      <td style="font-size:12px">${toItemsCount(line)}</td>
+      <td style="font-weight:700">${formatMoney(toSubtotal(line) + (line.delivery_fee ?? 0))}</td>
+      <td style="font-weight:700; color: var(--gold)">${formatMoney(toCommission(line))}</td>
+      <td style="font-weight:700; color: var(--forest-mid)">${formatMoney(toPayout(line))}</td>
+    </tr>
+  `).join('');
+}
+
+async function refreshProducerSettlements() {
+  if (state.producerSettlementLoading) return;
+  state.producerSettlementLoading = true;
+
+  try {
+    const report = await getSettlementReport();
+    state.producerSettlementReport = report;
+    renderSettlementsReport(report);
+  } catch (err) {
+    showToast(apiErrorMessage(err, 'Could not load settlement report.'), 'error');
+    state.producerSettlementReport = null;
+  } finally {
+    state.producerSettlementLoading = false;
+  }
+}
+
+function handleUpdateOrderStatus(orderId, nextStatus) {
+  if (orderId == null || nextStatus == null) {
+    showToast('Invalid order status update.', 'error');
+    return;
+  }
+  const ok = window.confirm(`Update order status to "${nextStatus}"?`);
+  if (!ok) return;
+
+  updateOrderStatus(orderId, { status: String(nextStatus).toLowerCase() })
+    .then(() => {
+      showToast('Order status updated.', 'success');
+      refreshProducerOrders();
+      refreshCustomerOrders();
+    })
+    .catch((err) => showToast(apiErrorMessage(err, 'Could not update order status.'), 'error'));
+}
+
+async function handleReorder(orderId) {
+  if (orderId == null) return;
+  try {
+    showToast('Reordering from history…', '');
+    await reorderFromHistory(orderId);
+    const cart = await getCart();
+    setCartFromApiResponse(cart);
+    navigate('cart');
+    showToast('Reorder complete.', 'success');
+  } catch (err) {
+    showToast(apiErrorMessage(err, 'Could not reorder.'), 'error');
+  }
+}
+
+async function handleDownloadSettlementCSV() {
+  try {
+    await downloadSettlementReport();
+    showToast('Settlement CSV download started.', 'success');
+  } catch (err) {
+    showToast(apiErrorMessage(err, 'Could not download settlement CSV.'), 'error');
+  }
+}
+
 async function refreshCustomerOrders() {
   if (state.customerOrdersLoading) return;
   state.customerOrdersLoading = true;
+  state.customerOrders = null;
 
   try {
     const data = await getCustomerOrderHistory();
-    const orders =
-      Array.isArray(data) ? data :
-      (data && (data.orders || data.results || data.customer_orders || [])) || [];
-
+    const orders = Array.isArray(data) ? data : (data && (data.orders || data.results)) ? (data.orders || data.results) : [];
     state.customerOrders = Array.isArray(orders) ? orders : [];
   } catch (err) {
     state.customerOrders = [];
@@ -996,151 +1300,9 @@ async function refreshCustomerOrders() {
   }
 }
 
-function renderSettlementsReport(report) {
-  const summary = (report && report.summary) ? report.summary : (report || {});
-  const lines =
-    (report && Array.isArray(report.lines) && report.lines) ? report.lines :
-    (report && Array.isArray(report.settlements) && report.settlements) ? report.settlements :
-    (report && report.items && Array.isArray(report.items)) ? report.items :
-    summary.lines && Array.isArray(summary.lines) ? summary.lines :
-    [];
-
-  const formatMoney = (v) => {
-    const n = typeof v === 'string' ? parseFloat(v) : Number(v);
-    return '£' + (Number.isFinite(n) ? n : 0).toFixed(2);
-  };
-
-  const ordersCount =
-    summary.order_count ?? summary.orders_count ?? summary.total_orders ??
-    (Array.isArray(lines) ? lines.length : 0);
-
-  const networkCommission =
-    summary.commission_total ?? summary.network_commission ?? summary.commission ??
-    summary.commission_deducted ?? 0;
-
-  const yourPayment =
-    summary.your_payment_total ?? summary.your_payment ?? summary.payout ??
-    summary.your_share ?? summary.producer_payout ?? 0;
-
-  const elOrders = document.getElementById('pdash-settlement-orders');
-  const elComm = document.getElementById('pdash-settlement-commission');
-  const elPayout = document.getElementById('pdash-settlement-your-payment');
-  if (elOrders) elOrders.textContent = String(ordersCount || 0);
-  if (elComm) elComm.textContent = formatMoney(networkCommission);
-  if (elPayout) elPayout.textContent = formatMoney(yourPayment);
-
-  const tbody = document.getElementById('pdash-settlements-tbody');
-  if (!tbody) return;
-
-  if (!Array.isArray(lines) || lines.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted);font-size:14px">
-          No settlements yet. When customers place real orders (Sprint 2), their payouts will be summarised here.
-        </td>
-      </tr>`;
-    return;
-  }
-
-  const toItemsCount = (line) => {
-    if (!line) return '—';
-    if (Array.isArray(line.items)) return String(line.items.length);
-    return String(line.items_sold || line.items_count || line.item_count || '—');
-  };
-
-  const toOrderId = (line) =>
-    line.invoice_number || (line.order && line.order.invoice_number) || line.order_id || line.id || '—';
-  const toCustomer = (line) =>
-    line.customer_name || line.customer || (line.order && line.order.customer_name) || (line.order && line.order.customer) || '—';
-  const toDelivery = (line) =>
-    line.delivery_date || line.date || (line.order && line.order.delivery_date) || (line.order && line.order.delivery) || '—';
-  const toTotal = (line) =>
-    line.order_total ?? line.total_amount ?? line.total ?? (line.order && line.order.total_amount) ?? 0;
-  const toCommission = (line) =>
-    line.commission ?? line.commission_amount ?? 0;
-  const toPayout = (line) =>
-    line.payout ?? line.your_share ?? line.producer_payout ?? 0;
-
-  tbody.innerHTML = lines.map(line => `
-    <tr>
-      <td>${toOrderId(line)}</td>
-      <td style="font-size:12px">${toCustomer(line)}</td>
-      <td style="font-size:12px">${toDelivery(line)}</td>
-      <td style="font-size:12px">${toItemsCount(line)}</td>
-      <td style="font-weight:700">${formatMoney(toTotal(line))}</td>
-      <td style="font-weight:700; color: var(--gold)">${formatMoney(toCommission(line))}</td>
-      <td style="font-weight:700; color: var(--forest-mid)">${formatMoney(toPayout(line))}</td>
-    </tr>
-  `).join('');
-}
-
-async function refreshProducerSettlements() {
-  if (state.producerSettlementLoading) return;
-  state.producerSettlementLoading = true;
-  try {
-    const report = await getSettlementReport();
-    state.producerSettlementReport = report;
-    renderSettlementsReport(report);
-  } catch (err) {
-    state.producerSettlementReport = null;
-    // Leave existing "No settlements yet" UI in place; just toast.
-    showToast(apiErrorMessage(err, 'Could not load settlement report.'), 'error');
-  } finally {
-    state.producerSettlementLoading = false;
-  }
-}
-
-function handleReorder(orderId) {
-  reorderFromHistory(orderId)
-    .then((res) => {
-      // If backend returns cart data directly, use it; otherwise refetch cart.
-      if (res && res.items) {
-        setCartFromApiResponse(res);
-        return;
-      }
-      return getCart().then(setCartFromApiResponse);
-    })
-    .then(() => {
-      navigate('cart');
-      showToast('Reorder added to cart.', 'success');
-    })
-    .catch((err) => {
-      showToast(apiErrorMessage(err, 'Could not reorder from history.'), 'error');
-    });
-}
-
-function handleUpdateOrderStatus(orderId, nextStatus) {
-  if (orderId == null || nextStatus == null) {
-    showToast('Invalid order status update.', 'error');
-    return;
-  }
-
-  const ok = window.confirm(`Update order status to "${nextStatus}"?`);
-  if (!ok) return;
-
-  updateOrderStatus(orderId, { status: String(nextStatus).toLowerCase() })
-    .then(() => {
-      showToast('Order status updated.', 'success');
-      refreshProducerOrders();
-    })
-    .catch((err) => {
-      showToast(apiErrorMessage(err, 'Could not update order status.'), 'error');
-    });
-}
-
-async function handleDownloadSettlementCSV() {
-  try {
-    await downloadSettlementReport();
-    showToast('Settlement download started.', 'success');
-  } catch (err) {
-    showToast(apiErrorMessage(err, 'Could not download settlement CSV.'), 'error');
-  }
-}
-
 function setProducerTab(tab) {
   state.producerDashTab = tab;
   renderProducerDash();
-  if (!state.currentUser || state.currentUser.role !== 'producer') return;
   if (tab === 'orders' || tab === 'overview') refreshProducerOrders();
   if (tab === 'payments') refreshProducerSettlements();
 }
@@ -1172,22 +1334,57 @@ function renderCustomerDash() {
   }
 
   const ordTable = document.getElementById('cdash-orders-table');
-  if (ordTable) {
-    const orders = state.customerOrders || [];
-    if (orders.length === 0) {
-      ordTable.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted);font-size:15px">You haven’t placed any orders yet. When you checkout, your orders will appear here.</td></tr>';
-    } else {
-      ordTable.innerHTML = orders.map(o => `
-        <tr>
-          <td style="font-weight:600">${o.id}</td><td>${o.date}</td>
-          <td style="font-size:12px">${o.producers}</td>
-          <td style="font-size:12px">${o.items}</td>
-          <td style="font-weight:700">£${o.total.toFixed(2)}</td>
-          <td><span class="status-pill status-${(o.status || '').toLowerCase()}">${o.status}</span></td>
-          <td><button class="btn btn-secondary btn-sm" onclick="handleReorder(${o.id})">Reorder</button></td>
-        </tr>`).join('');
-    }
+  if (!ordTable) return;
+
+  const loadingRow = `
+    <tr>
+      <td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted);font-size:15px">
+        Loading your orders…
+      </td>
+    </tr>`;
+  const emptyRow = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted);font-size:15px">You haven’t placed any orders yet. When you checkout, your orders will appear here.</td></tr>';
+
+  if (state.customerOrders === null) {
+    ordTable.innerHTML = loadingRow;
+    if (!state.customerOrdersLoading) refreshCustomerOrders();
+    return;
   }
+
+  if (!Array.isArray(state.customerOrders) || state.customerOrders.length === 0) {
+    ordTable.innerHTML = emptyRow;
+    return;
+  }
+
+  const formatMoney = (v) => {
+    const n = typeof v === 'string' ? parseFloat(v) : Number(v);
+    const safe = Number.isFinite(n) ? n : 0;
+    return '£' + safe.toFixed(2);
+  };
+
+  const toOrderId = (o) => o.invoice_number ?? o.id ?? '—';
+  const toDate = (o) => o.created_at ?? o.order_date ?? '—';
+  const toProducers = (o) => {
+    const groups = Array.isArray(o.producer_groups) ? o.producer_groups : [];
+    const names = groups.map(g => g.producer_info?.business_name || g.producer_info?.email).filter(Boolean);
+    return names.length ? names.join(', ') : '—';
+  };
+  const toItemsCount = (o) => {
+    const groups = Array.isArray(o.producer_groups) ? o.producer_groups : [];
+    return groups.reduce((sum, g) => sum + ((Array.isArray(g.items) ? g.items.length : 0)), 0);
+  };
+  const toTotal = (o) => o.total_amount ?? o.total ?? 0;
+  const toStatus = (o) => (o.status || 'pending');
+
+  ordTable.innerHTML = state.customerOrders.map(o => `
+    <tr>
+      <td style="font-weight:600">${toOrderId(o)}</td>
+      <td>${toDate(o)}</td>
+      <td style="font-size:12px">${toProducers(o)}</td>
+      <td style="font-size:12px">${toItemsCount(o)}</td>
+      <td style="font-weight:700">${formatMoney(toTotal(o))}</td>
+      <td><span class="status-pill status-${toStatus(o).toLowerCase()}">${toStatus(o)}</span></td>
+      <td><button class="btn btn-secondary btn-sm" onclick="handleReorder(${o.id})">Reorder</button></td>
+    </tr>`).join('');
 }
 
 function handleUpdateProfile() {
@@ -1211,8 +1408,56 @@ function handleUpdateProfile() {
 function setCustomerTab(tab) {
   state.customerDashTab = tab;
   renderCustomerDash();
-  if (!state.currentUser || state.currentUser.role !== 'customer') return;
   if (tab === 'orders') refreshCustomerOrders();
+}
+
+// ---- Admin Commission Report (TC-025) ----
+function renderAdminDash() {
+  const nameEl = document.getElementById('adash-user-name');
+  if (nameEl && state.currentUser) nameEl.textContent = state.currentUser.name;
+}
+
+async function handleLoadCommissionReport() {
+  const from = document.getElementById('adash-from-date')?.value;
+  const to = document.getElementById('adash-to-date')?.value;
+  try {
+    const report = await getCommissionReport({ from, to });
+    const tbody = document.getElementById('adash-commission-tbody');
+    if (!tbody) return;
+
+    const rows = Array.isArray(report?.orders) ? report.orders : [];
+    tbody.innerHTML = rows.length === 0
+      ? `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted);font-size:14px">No commission rows found for this date range.</td></tr>`
+      : rows.map(r => `
+          <tr>
+            <td style="font-weight:600">${r.invoice_number ?? '—'}</td>
+            <td style="font-size:12px">${r.producer_business ?? r.producer_email ?? '—'}</td>
+            <td style="font-size:12px">${r.processed_at ?? '—'}</td>
+            <td style="font-weight:700">${formatMoney(r.subtotal)}</td>
+            <td style="font-weight:700; color: var(--gold)">${formatMoney(r.commission)}</td>
+            <td style="font-weight:700; color: var(--forest-mid)">${formatMoney(r.producer_payout)}</td>
+          </tr>
+        `).join('');
+  } catch (err) {
+    showToast(apiErrorMessage(err, 'Could not load commission report.'), 'error');
+  }
+}
+
+async function handleExportCommissionCSV() {
+  const from = document.getElementById('adash-from-date')?.value;
+  const to = document.getElementById('adash-to-date')?.value;
+  try {
+    await exportCommissionCSV({ from, to });
+    showToast('Commission CSV download started.', 'success');
+  } catch (err) {
+    showToast(apiErrorMessage(err, 'Could not export commission CSV.'), 'error');
+  }
+}
+
+function formatMoney(v) {
+  const n = typeof v === 'string' ? parseFloat(v) : Number(v);
+  const safe = Number.isFinite(n) ? n : 0;
+  return '£' + safe.toFixed(2);
 }
 
 // ---- INIT ----
@@ -1239,15 +1484,11 @@ function initAuthAndCart() {
       state.currentUser = profileToUser(profile);
       renderAuthNavbar();
       if (state.currentUser.role === 'customer') {
-        return getCart()
-          .then(setCartFromApiResponse)
-          .then(() => refreshCustomerOrders());
+        return getCart().then(setCartFromApiResponse);
       } else if (state.currentUser.role === 'producer') {
-        return getProducts({ mine: true })
-          .then(prods => {
-            state.producerProducts = (prods || []).map(apiProductToUI);
-          })
-          .then(() => refreshProducerOrders());
+        return getProducts({ mine: true }).then(prods => {
+          state.producerProducts = (prods || []).map(apiProductToUI);
+        });
       }
     })
     .catch(() => { state.currentUser = null; renderAuthNavbar(); })

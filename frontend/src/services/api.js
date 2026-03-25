@@ -4,22 +4,21 @@
  */
 
 function getApiBase() {
-  if (typeof window === 'undefined') return 'http://localhost:8025';
+  if (typeof window === 'undefined') return '';
   if (window.BRFN_API_BASE) return window.BRFN_API_BASE;
   const meta = document.querySelector('meta[name="brfn-api-base"]');
   if (meta && meta.getAttribute('content')) return meta.getAttribute('content').trim();
-  return 'http://localhost:8025';
+  return '';
 }
 const API_BASE = getApiBase();
 
-/**
- * Make an authenticated JSON request to the backend.
- * @param {string} method - GET, POST, PUT, PATCH, DELETE
- * @param {string} path - Path relative to API base (e.g. '/api/auth/login/')
- * @param {object|null} body - Optional JSON body (ignored for GET)
- * @returns {Promise<object>} Parsed JSON response
- * @throws {Error} On non-2xx response; error.message is user-friendly, error.status and error.body available
- */
+function getCookie(name) {
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop().split(';').shift();
+  return null;
+}
+
 async function request(method, path, body = null) {
   const url = path.startsWith('http') ? path : `${API_BASE.replace(/\/$/, '')}${path.startsWith('/') ? '' : '/'}${path}`;
   const options = {
@@ -30,6 +29,14 @@ async function request(method, path, body = null) {
       Accept: 'application/json',
     },
   };
+
+  if (method !== 'GET') {
+    const csrfToken = getCookie('csrftoken');
+    if (csrfToken) {
+      options.headers['X-CSRFToken'] = csrfToken;
+    }
+  }
+
   if (body != null && method !== 'GET') {
     options.body = JSON.stringify(body);
   }
@@ -38,7 +45,6 @@ async function request(method, path, body = null) {
   try {
     res = await fetch(url, options);
   } catch (networkErr) {
-    // Any throw from fetch() is a network/CORS/connection issue — always show friendly message
     const err = new Error('Network error. Please check the backend is running and try again.');
     err.status = 0;
     err.body = null;
@@ -65,7 +71,6 @@ async function request(method, path, body = null) {
   return data;
 }
 
-// Convenience methods
 function get(path) {
   return request('GET', path);
 }

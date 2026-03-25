@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Stripe publishable key for test mode (pk_test_...) -->
+  <!-- Replace pk_test_REPLACE_ME with your Stripe test publishable key -->
+  <meta name="brfn-stripe-publishable-key" content="pk_test_51TE9U5EJ6L9B37glDiqpMApp7OUwi7HWQBH4jJtOwNPo17cPg5IQfxhxxsdPFNAwoJL3mcSOgYRQkflHRgap3YOp00UCqWdvh9" />
   <!-- Optional: set backend URL if not using Docker (e.g. backend on port 8000) -->
   <!-- <meta name="brfn-api-base" content="http://localhost:8000" /> -->
   <title>BRFN Digital Marketplace — Bristol Regional Food Network</title>
@@ -34,6 +37,38 @@
 </nav>
 
 <div class="toast-container" id="toast-container"></div>
+
+<!-- ==================== STRIPE CHECKOUT MODAL ==================== -->
+<div id="checkout-overlay" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px">
+  <div id="checkout-modal" style="width:min(640px,100%);background:#fff;border-radius:14px;box-shadow:0 18px 60px rgba(0,0,0,0.22);padding:18px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+      <div>
+        <h2 style="margin:0 0 6px">Checkout (Stripe Test Mode)</h2>
+        <p style="margin:0;color:var(--text-muted);font-size:14px">Use test card: <strong>4242 4242 4242 4242</strong></p>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="closeCheckoutModal()" type="button">Close</button>
+    </div>
+
+    <div class="form-row" style="margin-top:14px">
+      <div class="form-group" style="flex:1">
+        <label>Delivery Date <span class="req">*</span></label>
+        <input type="date" class="form-control" id="checkout-delivery-date" />
+        <div class="error-msg" id="checkout-delivery-date-err"></div>
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-top:14px">
+      <label>Card Details <span class="req">*</span></label>
+      <div id="stripe-card-element" style="padding:12px;border:1px solid rgba(0,0,0,0.14);border-radius:12px"></div>
+      <div id="stripe-card-error" style="color:#b91c1c;font-size:13px;margin-top:8px"></div>
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+      <button class="btn btn-secondary" onclick="closeCheckoutModal()" type="button">Cancel</button>
+      <button class="btn btn-gold" id="stripe-pay-btn" onclick="handleStripePay()" type="button">Pay</button>
+    </div>
+  </div>
+</div>
 
 <!-- ==================== HOME PAGE ==================== -->
 <div class="page active" id="page-home">
@@ -636,6 +671,70 @@
   </div>
 </div>
 
+<!-- ==================== ADMIN DASHBOARD ==================== -->
+<div class="page" id="page-admin-dash">
+  <div class="container">
+    <div class="dashboard-layout">
+      <aside class="dashboard-sidebar">
+        <div class="sidebar-user">
+          <div class="sidebar-avatar-fallback" id="adash-avatar">--</div>
+          <h4 id="adash-user-name">Admin</h4>
+          <span class="role-tag">Admin</span>
+        </div>
+        <ul class="sidebar-nav">
+          <li class="active" onclick="navigate('admin-dash')">Commission Report</li>
+        </ul>
+      </aside>
+      <main id="admin-dash-content">
+        <div class="dashboard-section active" id="adash-commission">
+          <div class="dash-header">
+            <h2>Admin Commission Report (TC-025)</h2>
+          </div>
+          <div class="form-card" style="max-width:860px">
+            <div class="form-row">
+              <div class="form-group">
+                <label>From</label>
+                <input type="date" id="adash-from-date" class="form-control" />
+              </div>
+              <div class="form-group">
+                <label>To</label>
+                <input type="date" id="adash-to-date" class="form-control" />
+              </div>
+            </div>
+            <div style="display:flex;gap:12px;margin-top:10px">
+              <button class="btn btn-primary btn-sm" onclick="handleLoadCommissionReport()" type="button">Load report</button>
+              <button class="btn btn-secondary btn-sm" onclick="handleExportCommissionCSV()" type="button">Export CSV</button>
+            </div>
+
+            <div class="data-table" style="margin-top:16px">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Invoice</th>
+                    <th>Producer</th>
+                    <th>Processed</th>
+                    <th>Subtotal</th>
+                    <th>Commission</th>
+                    <th>Payout (95%)</th>
+                  </tr>
+                </thead>
+                <tbody id="adash-commission-tbody">
+                  <tr>
+                    <td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted);font-size:14px">
+                      Load a report to see commission rows.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+</div>
+
 <!-- FOOTER -->
 <footer>
   <div class="container">
@@ -677,6 +776,7 @@
 <script src="src/services/orders.js"></script>
 <script src="src/services/paymentService.js"></script>
 <script src="src/services/adminService.js"></script>
+<script src="https://js.stripe.com/v3/"></script>
 <script src="app.js"></script>
 <script>
   function togglePw(id, btn) {

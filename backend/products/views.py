@@ -1,59 +1,51 @@
-from rest_framework import generics
-from rest_framework.permissions import AllowAny, IsAuthenticatedOrReadOnly
-
-from users.permissions import IsProducer
-from .models import Product, Category
-from .serializers import ProductSerializer, CategorySerializer
-
-
-# Eugene Dalla — Backend API: products + categories endpoints
-
+from rest_framework import generics, permissions, filters
+from django_filters.rest_framework import DjangoFilterBackend
+from .models import Product, Category, Allergen
+from .serializers import ProductSerializer, CategorySerializer, AllergenSerializer, ProductInventoryUpdateSerializer
+from users.permissions import IsProducer, IsOwner
 
 class ProductListCreateView(generics.ListCreateAPIView):
     serializer_class = ProductSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
-
-    def get_permissions(self):
-        if self.request.method in ("POST", "PUT", "PATCH", "DELETE"):
-            return [IsProducer()]
-        return [AllowAny()]
-
-    def perform_create(self, serializer):
-        """
-        When a producer creates a product, store who owns it.
-        """
-        user = self.request.user
-        serializer.save(producer=user)
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ['category', 'availability', 'is_organic']
+    search_fields = ['name', 'description']
 
     def get_queryset(self):
-        qs = Product.objects.all().order_by("-created_at")
-        category_id = self.request.query_params.get("category")
-        search = self.request.query_params.get("search")
-        mine = self.request.query_params.get("mine")
+        queryset = Product.objects.all()
+        if self.request.query_params.get('mine'):
+            if self.request.user.is_authenticated:
+                queryset = queryset.filter(producer=self.request.user)
+            else:
+                queryset = queryset.none()
+        return queryset
 
-        # For producer dash "My Products": /api/products/?mine=1 returns only their products
-        user = self.request.user
-        if mine and user and user.is_authenticated and getattr(user, "role", None) == "producer":
-            qs = qs.filter(producer=user)
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [permissions.IsAuthenticated(), IsProducer()]
+        return [permissions.AllowAny()]
 
-        if category_id:
-            qs = qs.filter(category_id=category_id)
-        if search:
-            qs = qs.filter(name__icontains=search)
-        return qs
-
+    def perform_create(self, serializer):
+        serializer.save(producer=self.request.user)
 
 class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Product.objects.all()
-    serializer_class = ProductSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
+
+    def get_serializer_class(self):
+        if self.request.method == 'PATCH':
+            return ProductInventoryUpdateSerializer
+        return ProductSerializer
 
     def get_permissions(self):
-        if self.request.method in ("PUT", "PATCH", "DELETE"):
-            return [IsProducer()]
-        return [AllowAny()]
-
+        if self.request.method in ['PUT', 'PATCH', 'DELETE']:
+            return [permissions.IsAuthenticated(), IsProducer(), IsOwner()]
+        return [permissions.AllowAny()]
 
 class CategoryList(generics.ListAPIView):
-    queryset = Category.objects.all().order_by("name")
+    queryset = Category.objects.all()
     serializer_class = CategorySerializer
+    permission_classes = [permissions.AllowAny]
+
+class AllergenList(generics.ListAPIView):
+    queryset = Allergen.objects.all()
+    serializer_class = AllergenSerializer
+    permission_classes = [permissions.AllowAny]

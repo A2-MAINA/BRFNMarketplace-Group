@@ -29,6 +29,10 @@ RUN sed -i 's/\r$//' /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh
 # Copy the rest of the project code into /app
 COPY . .
 
+#
+# `entrypoint.sh` inside `/app` may be overwritten by bind mounts.
+# We execute `/docker-entrypoint.sh` (copied above) instead.
+
 # Expose port 8000 for the Django development server
 EXPOSE 8000
 

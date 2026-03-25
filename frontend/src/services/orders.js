@@ -68,7 +68,9 @@ async function getProducerOrders(filters = {}) {
  * Expected: GET /api/orders/customer/
  */
 async function getCustomerOrderHistory() {
-  return get('/api/orders/customer/');
+  // Backend uses OrderListCreateView with role-based filtering.
+  // For customers, GET /api/orders/ returns order history.
+  return get('/api/orders/');
 }
 
 /**
@@ -100,12 +102,34 @@ async function cancelOrder(id, note = '') {
  */
 async function reorderFromHistory(orderId) {
   if (orderId == null) throw new Error('reorderFromHistory: orderId is required');
-  // If backend supports a dedicated endpoint, use it; otherwise the UI can call getOrder(orderId)
-  // and then re-add items to cart using the cart service.
-  try {
-    return post(`/api/orders/${orderId}/reorder/`, {});
-  } catch (_) {
-    // Fallback: return the order so the UI can rebuild the cart.
-    return getOrder(orderId);
+  const order = await getOrder(orderId);
+  if (!order || !Array.isArray(order.producer_groups)) {
+    throw new Error('reorderFromHistory: order details are missing producer_groups');
   }
+
+  // Add each order item back into the cart (cart endpoint enforces stock availability).
+  for (const group of order.producer_groups) {
+    const items = Array.isArray(group.items) ? group.items : [];
+    for (const item of items) {
+      const productIdRaw = item.product;
+      const productId = productIdRaw && typeof productIdRaw === 'object' && productIdRaw.id
+        ? productIdRaw.id
+        : productIdRaw;
+
+      const quantity = item.quantity != null ? Number(item.quantity) : 1;
+      if (productId == null) {
+        throw new Error('reorderFromHistory: item.product is missing from order payload');
+      }
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        throw new Error('reorderFromHistory: invalid quantity on order item');
+      }
+      await addOrUpdateCartItem(Number(productId), quantity);
+    }
+  }
+
+  // Return updated cart.
+  if (typeof getCart === 'function') {
+    return getCart();
+  }
+  return { ok: true };
 }

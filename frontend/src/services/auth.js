@@ -49,3 +49,7 @@ async function logout() {
 async function getProfile() {
   return get(`${AUTH_BASE}profile/`);
 }
+
+async function updateProfile(data) {
+  return patch(`${AUTH_BASE}profile/`, data);
+}

@@ -10,12 +10,11 @@
  * @param {number} amountPence - amount in pence (e.g. 1049 for £10.49)
  * @returns {Promise<{client_secret: string}>}
  */
-async function createPaymentIntent(amountPence) {
-  const amount = parseInt(amountPence, 10);
-  if (!Number.isFinite(amount) || amount <= 0) {
-    throw new Error('createPaymentIntent: amountPence must be a positive integer');
-  }
-  return post('/api/payments/create-intent/', { amount });
+async function createPaymentIntent(orderId) {
+  // Backend expects: POST /api/orders/payments/create-intent/ { "order_id": <id> }
+  // Amount is derived from order.total_amount on the server.
+  if (orderId == null) throw new Error('createPaymentIntent: orderId is required');
+  return post('/api/orders/payments/create-intent/', { order_id: orderId });
 }
 
 /**
@@ -40,7 +39,7 @@ async function confirmPayment(/* clientSecret, cardElement */) {
 async function notifyBackend(paymentIntentId, orderId) {
   if (!paymentIntentId) throw new Error('notifyBackend: paymentIntentId is required');
   if (orderId == null) throw new Error('notifyBackend: orderId is required');
-  return post('/api/payments/confirm/', {
+  return post('/api/orders/payments/confirm/', {
     payment_intent_id: paymentIntentId,
     order_id: orderId,
   });
@@ -52,16 +51,13 @@ async function notifyBackend(paymentIntentId, orderId) {
  * @returns {Promise<object>} Settlement report payload
  */
 async function getSettlementReport(weekParam = null) {
-  let week = weekParam;
-  if (!week) {
-    // Compute current ISO week as YYYY-WW
-    const d = new Date();
-    const onejan = new Date(d.getFullYear(), 0, 1);
-    const millis = d - onejan;
-    const days = Math.floor(millis / 86400000) + onejan.getDay() + 1;
-    week = `${d.getFullYear()}-${String(Math.ceil(days / 7)).padStart(2, '0')}`;
+  // IMPORTANT:
+  // When `week` is omitted, backend uses its own "current week" logic.
+  // This avoids mismatches between JS week-number calculations and backend week parsing.
+  if (!weekParam) {
+    return get('/api/orders/settlements/');
   }
-  return get(`/api/orders/settlements/?week=${encodeURIComponent(week)}`);
+  return get(`/api/orders/settlements/?week=${encodeURIComponent(weekParam)}`);
 }
 
 /**
@@ -69,32 +65,35 @@ async function getSettlementReport(weekParam = null) {
  * @param {string} [weekParam] - format YYYY-WW
  */
 async function downloadSettlementReport(weekParam = null) {
-  let week = weekParam;
-  if (!week) {
-    const d = new Date();
-    const onejan = new Date(d.getFullYear(), 0, 1);
-    const millis = d - onejan;
-    const days = Math.floor(millis / 86400000) + onejan.getDay() + 1;
-    week = `${d.getFullYear()}-${String(Math.ceil(days / 7)).padStart(2, '0')}`;
-  }
+  // Backend in this repo returns JSON only; generate CSV client-side.
+  const report = await getSettlementReport(weekParam);
 
-  // Use fetch directly so we can download a blob.
-  // (We intentionally don't reuse api.js request(), since it parses JSON.)
-  const url = `${(typeof window !== 'undefined' && window.BRFN_API_BASE) ? window.BRFN_API_BASE : 'http://localhost:8025'}`
-    + `/api/orders/settlements/download/?week=${encodeURIComponent(week)}`;
+  const week = weekParam || report?.week_start || report?.week_start?.toString?.() || 'settlement';
 
-  let res;
-  try {
-    res = await fetch(url, { credentials: 'include' });
-  } catch (e) {
-    throw new Error('Network error. Please check the backend is running and try again.');
-  }
+  const orders = Array.isArray(report?.orders) ? report.orders : [];
+  const headers = [
+    'invoice_number',
+    'delivery_date',
+    'customer_name',
+    'subtotal',
+    'commission',
+    'producer_payout',
+    'delivery_fee',
+  ];
 
-  if (!res.ok) {
-    throw new Error(`Download failed (HTTP ${res.status}).`);
-  }
+  const escapeCSV = (val) => {
+    const s = (val === null || val === undefined) ? '' : String(val);
+    // Escape quotes by doubling them
+    return `"${s.replace(/"/g, '""')}"`;
+  };
 
-  const blob = await res.blob();
+  const rows = orders.map(o =>
+    headers.map(h => escapeCSV(o?.[h] ?? '')).join(',')
+  );
+
+  const csv = [headers.join(','), ...rows].join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const downloadUrl = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = downloadUrl;

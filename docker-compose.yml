@@ -35,6 +35,10 @@ services: # Define all containers that make up the application
       SECRET_KEY: django-insecure-dev-key-change-in-production # Django cryptographic key (dev only)
       DEBUG: "True" # Enable Django debug mode for development
       ALLOWED_HOSTS: localhost,127.0.0.1 # Which hostnames Django accepts requests from
+      # Stripe test-mode configuration (set via your .env or hardcode your test keys)
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      # Publishable key is not required by backend, but it is useful for parity/documentation
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY}
     volumes:
       - ./backend:/app # Bind mount — code changes on your machine reflect inside container instantly
     ports:

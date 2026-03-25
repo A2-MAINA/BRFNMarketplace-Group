@@ -1,36 +1,33 @@
-from rest_framework.permissions import BasePermission, SAFE_METHODS
+from rest_framework import permissions
 
-
-# Eugene Dalla — Backend API & Business Logic: role-based permissions
-
-
-class IsProducer(BasePermission):
-    def has_permission(self, request, view):
-        user = request.user
-        return bool(user and user.is_authenticated and getattr(user, "role", None) == "producer")
-
-
-class IsCustomer(BasePermission):
-    def has_permission(self, request, view):
-        user = request.user
-        return bool(user and user.is_authenticated and getattr(user, "role", None) == "customer")
-
-
-class IsOwner(BasePermission):
+class IsProducer(permissions.BasePermission):
     """
-    Generic owner check used for resources linked to a user.
-    Tries obj.user, then obj.cart.user as a simple heuristic.
+    Custom permission to only allow producers to access the view.
     """
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role == 'producer'
 
-    # Eugene Dalla — Backend API: ownership checks for cart and future resources
+class IsCustomer(permissions.BasePermission):
+    """
+    Custom permission to only allow customers to access the view.
+    """
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role == 'customer'
+
+class IsOwner(permissions.BasePermission):
+    """
+    Custom permission to only allow owners of an object to edit it.
+    Checks for 'user' or 'producer' attribute on the object.
+    """
     def has_object_permission(self, request, view, obj):
-        user = request.user
-        if not (user and user.is_authenticated):
-            return False
+        # Read permissions are allowed to any request,
+        # so we'll always allow GET, HEAD or OPTIONS requests.
+        # if request.method in permissions.SAFE_METHODS:
+        #     return True
 
-        owner = getattr(obj, "user", None)
-        if owner is None and hasattr(obj, "cart"):
-            owner = getattr(obj.cart, "user", None)
-
-        return owner == user
-
+        # Write permissions are only allowed to the owner of the snippet.
+        if hasattr(obj, 'user'):
+            return obj.user == request.user
+        if hasattr(obj, 'producer'):
+            return obj.producer == request.user
+        return False

@@ -10,10 +10,11 @@
  * @param {object} params - { startDate: 'YYYY-MM-DD', endDate: 'YYYY-MM-DD' }
  */
 async function getCommissionReport(params = {}) {
-  const start = params.startDate || '';
-  const end = params.endDate || '';
-  if (!start || !end) throw new Error('getCommissionReport: startDate and endDate are required');
-  return get(`/api/admin/commissions/?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);
+  // Backend: GET /api/orders/admin/commission/?from=YYYY-MM-DD&to=YYYY-MM-DD
+  const from = params.from || params.startDate || '';
+  const to = params.to || params.endDate || '';
+  if (!from || !to) throw new Error('getCommissionReport: from and to are required');
+  return get(`/api/orders/admin/commission/?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
 }
 
 /**
@@ -21,29 +22,36 @@ async function getCommissionReport(params = {}) {
  * @param {object} params - { startDate: 'YYYY-MM-DD', endDate: 'YYYY-MM-DD' }
  */
 async function exportCommissionCSV(params = {}) {
-  const start = params.startDate || '';
-  const end = params.endDate || '';
-  if (!start || !end) throw new Error('exportCommissionCSV: startDate and endDate are required');
+  const report = await getCommissionReport(params);
 
-  const url = `${(typeof window !== 'undefined' && window.BRFN_API_BASE) ? window.BRFN_API_BASE : 'http://localhost:8025'}`
-    + `/api/admin/commissions/download/?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
+  const from = params.from || params.startDate || report?.from || '';
+  const to = params.to || params.endDate || report?.to || '';
 
-  let res;
-  try {
-    res = await fetch(url, { credentials: 'include' });
-  } catch (e) {
-    throw new Error('Network error. Please check the backend is running and try again.');
-  }
+  const rows = Array.isArray(report?.orders) ? report.orders : [];
 
-  if (!res.ok) {
-    throw new Error(`CSV download failed (HTTP ${res.status}).`);
-  }
+  const headers = [
+    'invoice_number',
+    'producer_email',
+    'producer_business',
+    'subtotal',
+    'commission',
+    'producer_payout',
+    'processed_at',
+  ];
 
-  const blob = await res.blob();
+  const escapeCSV = (val) => {
+    const s = (val === null || val === undefined) ? '' : String(val);
+    return `"${s.replace(/"/g, '""')}"`;
+  };
+
+  const csvRows = rows.map(r => headers.map(h => escapeCSV(r?.[h] ?? '')).join(','));
+  const csv = [headers.join(','), ...csvRows].join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const downloadUrl = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = downloadUrl;
-  a.download = `commission_${start}_to_${end}.csv`;
+  a.download = `commission_${from}_to_${to}.csv`;
   document.body.appendChild(a);
   a.click();
   a.remove();

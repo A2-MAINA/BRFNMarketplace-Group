@@ -3,32 +3,43 @@
  * Cart items include nested product object.
  */
 
-const CART_PATH = '/api/cart/';
+// Backend routes can be a little inconsistent across setups.
+// Try the expected path first, then fall back if the backend returns 404.
+const CART_PATH_PRIMARY = '/api/cart/';
+const CART_PATH_FALLBACK = '/api/cart/cart/';
 
-/**
- * Get current user's cart.
- * @returns {Promise<object>} { items: Array<{ id, product, product_id?, quantity, created_at }>, total: string, count: number }
- * Each item.product: { id, name, description, price, image_url, stock, category, category_name, created_at }
- */
+async function requestWithCartFallback(fn) {
+  try {
+    return await fn(CART_PATH_PRIMARY);
+  } catch (err) {
+    // Only retry on route-not-found; for auth/stock errors, don't mask the real issue.
+    if (err && err.status === 404) {
+      return fn(CART_PATH_FALLBACK);
+    }
+    throw err;
+  }
+}
+
 async function getCart() {
-  return get(CART_PATH);
+  return requestWithCartFallback((path) => get(path));
 }
 
-/**
- * Add or update a product in the cart.
- * @param {number} productId
- * @param {number} quantity
- * @returns {Promise<object>} Full cart response (same shape as getCart)
- */
 async function addOrUpdateCartItem(productId, quantity) {
-  return post(CART_PATH, { product_id: productId, quantity });
+  return requestWithCartFallback((path) => post(path, { product_id: productId, quantity }));
+}
+
+async function removeCartItem(itemId) {
+  return requestWithCartFallback((path) => del(`${path}items/${itemId}/`));
+}
+
+async function updateCartItemQty(itemId, quantity) {
+  return requestWithCartFallback((path) => put(`${path}items/${itemId}/`, { quantity }));
 }
 
 /**
- * Remove a product from the cart.
- * @param {number} productId
- * @returns {Promise<object>} Full cart response (same shape as getCart)
+ * Clear entire cart for current customer.
+ * Backend: DELETE /api/cart/
  */
-async function removeCartItem(productId) {
-  return del(CART_PATH, { product_id: productId });
+async function clearCart() {
+  return requestWithCartFallback((path) => del(path));
 }

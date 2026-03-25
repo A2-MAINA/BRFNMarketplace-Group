@@ -481,6 +481,9 @@ img { max-width: 100%; display: block; object-fit: cover; }
 .status-pill { display: inline-block; padding: 4px 12px; border-radius: 50px; font-size: 11px; font-weight: 700; }
 .status-pending   { background: #fff3cd; color: #856404; }
 .status-confirmed { background: var(--mint); color: var(--forest-mid); }
+.status-processing{ background: #e9d5ff; color: #5b21b6; }
+.status-rejected  { background: #fee2e2; color: #991b1b; }
+.status-cancelled { background: #e5e7eb; color: #374151; }
 .status-ready     { background: #d1ecf1; color: #0c5460; }
 .status-delivered { background: #d4edda; color: #155724; }
 
