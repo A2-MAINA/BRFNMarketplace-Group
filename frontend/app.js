@@ -1254,7 +1254,10 @@ function handleUpdateOrderStatus(orderId, nextStatus) {
     .then(() => {
       showToast('Order status updated.', 'success');
       refreshProducerOrders();
-      refreshCustomerOrders();
+      // Only customers can view order history; producers should not trigger that refresh.
+      if (state.currentUser && state.currentUser.role === 'customer') {
+        refreshCustomerOrders();
+      }
     })
     .catch((err) => showToast(apiErrorMessage(err, 'Could not update order status.'), 'error'));
 }
