@@ -128,18 +128,19 @@ class ProducerOrderListView(APIView):
         ).select_related('order').order_by('delivery_date')
 
         if status_filter:
-            groups = groups.filter(order__status=status_filter)
+            groups = groups.filter(status=status_filter)
 
         # Build response — producer sees only their group, not other producers
         data = []
         for group in groups:
             order = group.order
             data.append({
+                'id': group.pk,
                 'order_id': order.pk,
                 'invoice_number': order.invoice_number,
                 'order_date': order.created_at,
                 'delivery_date': group.delivery_date or order.delivery_date,
-                'status': order.status,
+                'status': group.status,
                 'fulfilment_type': group.fulfilment_type,
                 'special_instructions': order.special_instructions,
                 'delivery_address': order.delivery_address,
@@ -188,17 +189,20 @@ class ProducerOrderStatusView(APIView):
         if request.user.role != 'producer':
             return Response({'error': 'Only producers can update order status.'}, status=403)
 
-        # Make sure this producer owns a group in this order
+        # Look up by group PK first, fall back to order PK for backwards compatibility
         try:
-            group = OrderProducerGroup.objects.get(order__pk=pk, producer=request.user)
+            group = OrderProducerGroup.objects.get(pk=pk, producer=request.user)
         except OrderProducerGroup.DoesNotExist:
-            return Response({'error': 'Order not found.'}, status=404)
+            try:
+                group = OrderProducerGroup.objects.get(order__pk=pk, producer=request.user)
+            except OrderProducerGroup.DoesNotExist:
+                return Response({'error': 'Order not found.'}, status=404)
 
         order = group.order
         serializer = OrderStatusUpdateSerializer(
             order,
             data=request.data,
-            context={'request': request, 'order': order}
+            context={'request': request, 'order': order, 'group': group}
         )
         if serializer.is_valid():
             updated_order = serializer.save()
@@ -233,12 +237,14 @@ class ProducerSettlementView(APIView):
 
         week_end = week_start + datetime.timedelta(days=6)
 
-        # Only delivered orders with processed_at in this week
+        # Delivered groups for this producer within this week
+        # Use order.updated_at as the settlement date since payment.processed_at
+        # may not be set until ALL groups in a multi-vendor order are delivered
         groups = OrderProducerGroup.objects.filter(
             producer=request.user,
-            order__status='delivered',
-            order__payment__processed_at__date__gte=week_start,
-            order__payment__processed_at__date__lte=week_end,
+            status='delivered',
+            order__updated_at__date__gte=week_start,
+            order__updated_at__date__lte=week_end,
         )
 
         from decimal import Decimal
@@ -275,13 +281,13 @@ class AdminCommissionReportView(APIView):
         to_date = request.query_params.get('to')
 
         groups = OrderProducerGroup.objects.filter(
-            order__status='delivered'
+            status='delivered'
         ).select_related('order', 'producer')
 
         if from_date:
-            groups = groups.filter(order__payment__processed_at__date__gte=from_date)
+            groups = groups.filter(order__updated_at__date__gte=from_date)
         if to_date:
-            groups = groups.filter(order__payment__processed_at__date__lte=to_date)
+            groups = groups.filter(order__updated_at__date__lte=to_date)
 
         from decimal import Decimal
         total_commission = sum(g.commission for g in groups) or Decimal('0.00')

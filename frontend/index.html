@@ -39,23 +39,18 @@
 <div class="toast-container" id="toast-container"></div>
 
 <!-- ==================== STRIPE CHECKOUT MODAL ==================== -->
-<div id="checkout-overlay" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px">
-  <div id="checkout-modal" style="width:min(640px,100%);background:#fff;border-radius:14px;box-shadow:0 18px 60px rgba(0,0,0,0.22);padding:18px">
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+<div id="checkout-overlay" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px;overflow-y:auto">
+  <div id="checkout-modal" style="width:min(680px,100%);background:#fff;border-radius:14px;box-shadow:0 18px 60px rgba(0,0,0,0.22);padding:24px;max-height:90vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px">
       <div>
-        <h2 style="margin:0 0 6px">Checkout (Stripe Test Mode)</h2>
-        <p style="margin:0;color:var(--text-muted);font-size:14px">Use test card: <strong>4242 4242 4242 4242</strong></p>
+        <h2 style="margin:0 0 4px">Checkout</h2>
+        <p style="margin:0;color:var(--text-muted);font-size:13px">Stripe Test Mode — Use card: <strong>4242 4242 4242 4242</strong></p>
       </div>
       <button class="btn btn-secondary btn-sm" onclick="closeCheckoutModal()" type="button">Close</button>
     </div>
 
-    <div class="form-row" style="margin-top:14px">
-      <div class="form-group" style="flex:1">
-        <label>Delivery Date <span class="req">*</span></label>
-        <input type="date" class="form-control" id="checkout-delivery-date" />
-        <div class="error-msg" id="checkout-delivery-date-err"></div>
-      </div>
-    </div>
+    <!-- Per-producer fulfilment sections rendered dynamically by handleCheckout() -->
+    <div id="checkout-producer-sections"></div>
 
     <div class="form-group" style="margin-top:14px">
       <label>Card Details <span class="req">*</span></label>
@@ -65,7 +60,7 @@
 
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
       <button class="btn btn-secondary" onclick="closeCheckoutModal()" type="button">Cancel</button>
-      <button class="btn btn-gold" id="stripe-pay-btn" onclick="handleStripePay()" type="button">Pay</button>
+      <button class="btn btn-gold" id="stripe-pay-btn" onclick="handleStripePay()" type="button">Pay Now</button>
     </div>
   </div>
 </div>
@@ -464,9 +459,11 @@
               <div class="change">Add products to get started</div>
             </div>
           </div>
+          <div class="pdash-order-filters"></div>
           <div class="data-table">
             <table>
-              <thead><tr><th>Order</th><th>Customer</th><th>Order Date</th><th>Delivery</th><th>Items</th><th>Total</th><th>Status</th></tr></thead>
+              <colgroup><col style="width:12%"><col style="width:12%"><col style="width:10%"><col style="width:10%"><col style="width:26%"><col style="width:10%"><col style="width:20%"></colgroup>
+              <thead><tr><th>Order</th><th>Customer</th><th>Ordered</th><th>Delivery</th><th>Items</th><th>Total</th><th>Status</th></tr></thead>
               <tbody class="pdash-orders-tbody"></tbody>
             </table>
           </div>
@@ -475,9 +472,11 @@
         <!-- Orders -->
         <div class="dashboard-section" id="pdash-orders">
           <div class="dash-header"><h2>Incoming Orders</h2></div>
+          <div class="pdash-order-filters"></div>
           <div class="data-table">
             <table>
-              <thead><tr><th>Order</th><th>Customer</th><th>Order Date</th><th>Delivery</th><th>Items</th><th>Total</th><th>Status</th></tr></thead>
+              <colgroup><col style="width:12%"><col style="width:12%"><col style="width:10%"><col style="width:10%"><col style="width:26%"><col style="width:10%"><col style="width:20%"></colgroup>
+              <thead><tr><th>Order</th><th>Customer</th><th>Ordered</th><th>Delivery</th><th>Items</th><th>Total</th><th>Status</th></tr></thead>
               <tbody class="pdash-orders-tbody"></tbody>
             </table>
           </div>
@@ -534,7 +533,17 @@
                 </div>
                 <div class="form-group">
                   <label>Unit <span class="req">*</span></label>
-                  <input type="text" class="form-control" id="prod-unit" placeholder="e.g. dozen, kg, litre" />
+                  <select class="form-control" id="prod-unit">
+                    <option value="each">Each</option>
+                    <option value="dozen">Dozen</option>
+                    <option value="kg">Kilogram</option>
+                    <option value="g">Grams</option>
+                    <option value="lb">Pound</option>
+                    <option value="bunch">Bunch</option>
+                    <option value="bag">Bag</option>
+                    <option value="box">Box</option>
+                    <option value="litre">Litre</option>
+                  </select>
                 </div>
               </div>
               <div class="form-row">
@@ -648,9 +657,11 @@
             <h2>My Orders</h2>
             <button class="btn btn-primary btn-sm" onclick="navigate('browse')">Shop Again</button>
           </div>
+          <div id="cdash-order-filters"></div>
           <div class="data-table">
             <table>
-              <thead><tr><th>Order</th><th>Date</th><th>Producers</th><th>Items</th><th>Total</th><th>Status</th><th>Action</th></tr></thead>
+              <colgroup><col style="width:14%"><col style="width:10%"><col style="width:46%"><col style="width:12%"><col style="width:18%"></colgroup>
+              <thead><tr><th>Order</th><th>Date</th><th>Items by Producer</th><th>Total</th><th>Action</th></tr></thead>
               <tbody id="cdash-orders-table"></tbody>
             </table>
           </div>
@@ -733,6 +744,11 @@
       </main>
     </div>
   </div>
+</div>
+
+<!-- ==================== ORDER CONFIRMATION ==================== -->
+<div class="page" id="page-order-confirm">
+  <div class="container" id="order-confirm-content"></div>
 </div>
 
 <!-- FOOTER -->

@@ -83,6 +83,7 @@ class OrderProducerGroupSerializer(serializers.ModelSerializer):
             'id',
             'producer',
             'producer_info',
+            'status',
             'fulfilment_type',
             'delivery_fee',
             'pickup_location',
@@ -299,23 +300,56 @@ class OrderCreateSerializer(serializers.Serializer):
 # Order Status Update Serializer (TC-010)
 # ============================
 
-VALID_TRANSITIONS = {
+GROUP_VALID_TRANSITIONS = {
     'pending':    ['confirmed', 'rejected'],
     'confirmed':  ['processing'],
     'processing': ['ready'],
     'ready':      ['delivered'],
 }
 
+
+def derive_order_status(order):
+    """
+    Auto-derive the parent Order status from all its producer group statuses.
+    Rules:
+    - If ALL groups are delivered → order is delivered
+    - If ALL groups are rejected → order is rejected
+    - If ANY group is rejected and the rest are delivered → order is delivered
+    - Otherwise use the least-progressed non-rejected group status
+    """
+    statuses = list(order.producer_groups.values_list('status', flat=True))
+    if not statuses:
+        return order.status
+
+    non_rejected = [s for s in statuses if s != 'rejected']
+
+    # All rejected
+    if not non_rejected:
+        return 'rejected'
+
+    # All non-rejected are delivered
+    if all(s == 'delivered' for s in non_rejected):
+        return 'delivered'
+
+    # Use least-progressed non-rejected status
+    progress = ['pending', 'confirmed', 'processing', 'ready', 'delivered']
+    for p in progress:
+        if p in non_rejected:
+            return p
+
+    return order.status
+
+
 class OrderStatusUpdateSerializer(serializers.Serializer):
     status = serializers.CharField()
     note = serializers.CharField(required=False, allow_blank=True)
 
     def validate_status(self, value):
-        order = self.context['order']
-        allowed = VALID_TRANSITIONS.get(order.status, [])
+        group = self.context['group']
+        allowed = GROUP_VALID_TRANSITIONS.get(group.status, [])
         if value not in allowed:
             raise serializers.ValidationError(
-                f"Cannot transition from '{order.status}' to '{value}'. "
+                f"Cannot transition from '{group.status}' to '{value}'. "
                 f"Allowed: {allowed}"
             )
         return value
@@ -324,8 +358,14 @@ class OrderStatusUpdateSerializer(serializers.Serializer):
         new_status = validated_data['status']
         note = validated_data.get('note', '')
         user = self.context['request'].user
+        group = self.context['group']
 
-        order.status = new_status
+        # Update the producer group status
+        group.status = new_status
+        group.save(update_fields=['status'])
+
+        # Auto-derive parent order status
+        order.status = derive_order_status(order)
         order.save(update_fields=['status'])
 
         # Always create history record on every status change
@@ -336,13 +376,14 @@ class OrderStatusUpdateSerializer(serializers.Serializer):
             note=note,
         )
 
-        # Trigger payment release on delivery
-        if new_status == 'delivered':
+        # Trigger payment release when ALL non-rejected groups are delivered
+        if order.status == 'delivered':
             try:
                 payment = order.payment
-                payment.status = 'processed'
-                payment.processed_at = timezone.now()
-                payment.save(update_fields=['status', 'processed_at'])
+                if payment.status != 'processed':
+                    payment.status = 'processed'
+                    payment.processed_at = timezone.now()
+                    payment.save(update_fields=['status', 'processed_at'])
             except Payment.DoesNotExist:
                 pass
 

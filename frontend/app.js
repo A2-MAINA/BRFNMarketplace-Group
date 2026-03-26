@@ -99,7 +99,10 @@ const state = {
   currentUser: null,
   currentProduct: null,
   producerDashTab: 'overview',
+  producerOrderFilter: 'all',
+  lastConfirmedOrder: null,
   customerDashTab: 'orders',
+  customerOrderFilter: 'all',
   categories: [],   // UI categories (All + from API)
   products: [],     // All products from API (normalized)
   producerProducts: [], // Products belonging to logged-in producer
@@ -209,6 +212,23 @@ function apiErrorMessage(err, fallback) {
 
 // ---- NAVIGATION ----
 function navigate(page, extra) {
+  // Role guards — TC-022
+  if (page === 'producer-dash' && (!state.currentUser || state.currentUser.role !== 'producer')) {
+    showToast('Access denied.', 'error');
+    navigate(state.currentUser ? 'home' : 'login');
+    return;
+  }
+  if (page === 'admin-dash' && (!state.currentUser || state.currentUser.role !== 'admin')) {
+    showToast('Access denied.', 'error');
+    navigate(state.currentUser ? 'home' : 'login');
+    return;
+  }
+  if (page === 'customer-dash' && (!state.currentUser || state.currentUser.role !== 'customer')) {
+    showToast('Access denied.', 'error');
+    navigate(state.currentUser ? 'home' : 'login');
+    return;
+  }
+
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   const target = document.getElementById('page-' + page);
   if (!target) {
@@ -235,6 +255,7 @@ function navigate(page, extra) {
   }
   if (page === 'customer-dash') renderCustomerDash();
   if (page === 'admin-dash') renderAdminDash();
+  if (page === 'order-confirm') renderOrderConfirmation(state.lastConfirmedOrder);
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -242,6 +263,8 @@ function navigate(page, extra) {
 function getFiltered() {
   const list = state.products || [];
   return list.filter(p => {
+    // Hide out-of-season products from the marketplace (TC-011)
+    if (p.availability === 'Out of Season') return false;
     const catMatch = state.currentCategory === 'all' || p.category === state.currentCategory || String(p.category) === String(state.currentCategory);
     const q = (state.searchQuery || '').toLowerCase();
     const sMatch = !q || (p.name || '').toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q) || (p.producer || '').toLowerCase().includes(q);
@@ -534,12 +557,39 @@ function handleCheckout() {
     return;
   }
 
-  // Default delivery date: at least 48 hours from now.
+  // Build per-producer sections with fulfilment selector and delivery date picker
   const minDate = getMinDeliveryDateStr(2);
-  const dateInput = document.getElementById('checkout-delivery-date');
-  if (dateInput) {
-    dateInput.min = minDate;
-    if (!dateInput.value) dateInput.value = minDate;
+  const groups = {};
+  state.cart.forEach(item => {
+    const key = String(item.producerId);
+    if (!groups[key]) groups[key] = { producerName: item.producer, producerId: item.producerId, items: [] };
+    groups[key].items.push(item);
+  });
+
+  const sectionsEl = document.getElementById('checkout-producer-sections');
+  if (sectionsEl) {
+    sectionsEl.innerHTML = Object.values(groups).map(g => `
+      <div style="border:1px solid #e5e7eb;border-radius:10px;padding:14px;margin-bottom:14px">
+        <h4 style="margin:0 0 10px;font-size:15px;color:var(--forest)">${g.producerName}</h4>
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:10px">
+          ${g.items.map(i => `${i.qty}× ${i.name}`).join(', ')}
+        </div>
+        <div class="form-row" style="gap:12px">
+          <div class="form-group" style="flex:1">
+            <label style="font-size:13px">Fulfilment <span class="req">*</span></label>
+            <select class="form-control" id="fulfilment-${g.producerId}" style="font-size:13px">
+              <option value="standard">Standard Delivery — £2.99 (3–5 days)</option>
+              <option value="express">Express Delivery — £4.99 (1–2 days)</option>
+              <option value="pickup">Pickup from producer — Free</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1">
+            <label style="font-size:13px">Delivery Date <span class="req">*</span></label>
+            <input type="date" class="form-control" id="delivery-date-${g.producerId}" min="${minDate}" value="${minDate}" style="font-size:13px" />
+          </div>
+        </div>
+      </div>
+    `).join('');
   }
 
   try {
@@ -549,7 +599,69 @@ function handleCheckout() {
     return;
   }
 
+  // Render live total summary
+  updateCheckoutTotal();
   openCheckoutModal();
+}
+
+function updateCheckoutTotal() {
+  const DELIVERY_FEES = { standard: 2.99, express: 4.99, pickup: 0.00 };
+  const groups = {};
+  state.cart.forEach(item => {
+    const key = String(item.producerId);
+    if (!groups[key]) groups[key] = { producerId: item.producerId, items: [] };
+    groups[key].items.push(item);
+  });
+
+  const productSubtotal = getCartTotal();
+  let totalDelivery = 0;
+
+  Object.values(groups).forEach(g => {
+    const sel = document.getElementById('fulfilment-' + g.producerId);
+    const type = sel ? sel.value : 'standard';
+    totalDelivery += DELIVERY_FEES[type] || 0;
+
+    // Add onchange listener if not already set
+    if (sel && !sel._listenerAdded) {
+      sel.addEventListener('change', updateCheckoutTotal);
+      sel._listenerAdded = true;
+    }
+  });
+
+  const commission = productSubtotal * 0.05;
+  const grandTotal = productSubtotal + totalDelivery;
+
+  // Render or update the total summary box
+  let summaryEl = document.getElementById('checkout-live-total');
+  if (!summaryEl) {
+    summaryEl = document.createElement('div');
+    summaryEl.id = 'checkout-live-total';
+    summaryEl.style.cssText = 'background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:14px;margin-top:4px;margin-bottom:14px';
+    const sectionsEl = document.getElementById('checkout-producer-sections');
+    if (sectionsEl && sectionsEl.parentNode) {
+      sectionsEl.parentNode.insertBefore(summaryEl, sectionsEl.nextSibling);
+    }
+  }
+
+  summaryEl.innerHTML = `
+    <h4 style="margin:0 0 10px;font-size:14px;color:var(--forest)">Order Total</h4>
+    <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
+      <span style="color:var(--text-muted)">Products subtotal</span>
+      <span>£${productSubtotal.toFixed(2)}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
+      <span style="color:var(--text-muted)">Delivery fees</span>
+      <span>£${totalDelivery.toFixed(2)}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px">
+      <span style="color:var(--text-muted)">BRFN commission (5%)</span>
+      <span style="color:var(--gold)">−£${commission.toFixed(2)} (from producer)</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:700;border-top:1px solid #e5e7eb;padding-top:8px">
+      <span>Total to pay</span>
+      <span style="color:var(--forest)">£${grandTotal.toFixed(2)}</span>
+    </div>
+  `;
 }
 
 async function handleStripePay() {
@@ -570,13 +682,6 @@ async function handleStripePay() {
   if (payBtn) payBtn.disabled = true;
 
   try {
-    const dateInput = document.getElementById('checkout-delivery-date');
-    const deliveryDate = dateInput ? dateInput.value : '';
-    if (!deliveryDate) {
-      showToast('Select a delivery date.', 'error');
-      return;
-    }
-
     const deliveryAddress = state.currentUser.deliveryAddress || '';
     const deliveryPostcode = state.currentUser.postcode || '';
     if (!deliveryAddress || !deliveryPostcode) {
@@ -584,7 +689,7 @@ async function handleStripePay() {
       return;
     }
 
-    // Build producer_groups payload required by backend OrderCreateSerializer.
+    // Build producer_groups payload — read fulfilment type and delivery date per producer
     const groupsByProducerId = {};
     for (const item of state.cart) {
       const producerId = item.producerId;
@@ -593,10 +698,20 @@ async function handleStripePay() {
       }
       const key = String(producerId);
       if (!groupsByProducerId[key]) {
+        // Read the per-producer fulfilment type and delivery date from the checkout modal
+        const fulfilmentEl = document.getElementById('fulfilment-' + producerId);
+        const dateEl = document.getElementById('delivery-date-' + producerId);
+        const fulfilmentType = fulfilmentEl ? fulfilmentEl.value : 'standard';
+        const producerDeliveryDate = dateEl ? dateEl.value : '';
+
+        if (!producerDeliveryDate) {
+          throw new Error('Please select a delivery date for ' + item.producer);
+        }
+
         groupsByProducerId[key] = {
           producer_id: Number(producerId),
-          fulfilment_type: 'standard',
-          delivery_date: deliveryDate,
+          fulfilment_type: fulfilmentType,
+          delivery_date: producerDeliveryDate,
           items: [],
         };
       }
@@ -633,7 +748,7 @@ async function handleStripePay() {
     if (!paymentIntentId) throw new Error('Payment succeeded but paymentIntent id is missing.');
 
     await notifyBackend(paymentIntentId, order.id);
-    showToast('Payment successful! Your order is confirmed.', 'success');
+    showToast(`Order ${order.invoice_number || '#' + order.id} confirmed! Payment successful.`, 'success');
     closeCheckoutModal();
 
     // Clear cart UI + backend cart.
@@ -641,7 +756,9 @@ async function handleStripePay() {
     const cart = await getCart();
     setCartFromApiResponse(cart);
 
-    navigate('customer-dash');
+    // Show order confirmation page
+    state.lastConfirmedOrder = order;
+    navigate('order-confirm');
   } catch (err) {
     showToast(apiErrorMessage(err, 'Checkout failed.'), 'error');
   } finally {
@@ -795,7 +912,10 @@ function handleLogin(e) {
       state.currentUser = profileToUser(profile);
       renderAuthNavbar();
       showToast(`Welcome back, ${state.currentUser.name.split(' ')[0]}!`, 'success');
-      navigate(state.currentUser.role === 'producer' ? 'producer-dash' : 'customer-dash');
+      const dest = state.currentUser.role === 'admin' ? 'admin-dash'
+        : state.currentUser.role === 'producer' ? 'producer-dash'
+        : 'customer-dash';
+      navigate(dest);
       if (state.currentUser.role === 'customer') {
         getCart().then(setCartFromApiResponse).catch(() => {});
       }
@@ -879,8 +999,12 @@ function renderProducerDash() {
     if (o.customer) return String(o.customer);
     return '—';
   };
-  const toDate = (o) => (o && (o.created_at || o.order_date || o.date)) ? String(o.created_at || o.order_date || o.date) : '—';
-  const toDeliveryDate = (o) => (o && (o.delivery_date || o.delivery)) ? String(o.delivery_date || o.delivery) : '—';
+  const shortDate = (raw) => {
+    if (!raw) return '—';
+    try { const d = new Date(raw); return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); } catch(e) { return String(raw).substring(0, 10); }
+  };
+  const toDate = (o) => shortDate(o && (o.created_at || o.order_date || o.date));
+  const toDeliveryDate = (o) => shortDate(o && (o.delivery_date || o.delivery));
   const toTotal = (o) => {
     // Producer orders endpoint returns per-group subtotal + delivery_fee.
     const subtotal = o && o.subtotal != null ? o.subtotal : (o && o.total_amount != null ? o.total_amount : 0);
@@ -902,38 +1026,80 @@ function renderProducerDash() {
 
     if (status === 'pending') {
       return `
-        <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn btn-secondary btn-sm" onclick="handleUpdateOrderStatus('${id}','confirmed')">Confirm</button>
-          <button class="btn btn-secondary btn-sm" onclick="handleUpdateOrderStatus('${id}','rejected')">Reject</button>
+        <div class="order-action-prompt">
+          <span class="order-action-label">Action required</span>
+          <div class="order-action-buttons">
+            <button class="btn btn-confirm btn-sm" onclick="handleUpdateOrderStatus('${id}','confirmed')">Accept Order</button>
+            <button class="btn btn-reject btn-sm" onclick="handleUpdateOrderStatus('${id}','rejected')">Reject</button>
+          </div>
         </div>`;
     }
     if (status === 'confirmed') {
-      return `<div style="margin-top:6px"><button class="btn btn-secondary btn-sm" onclick="handleUpdateOrderStatus('${id}','processing')">Mark Processing</button></div>`;
+      return `<div style="margin-top:6px"><button class="btn btn-progress btn-sm" onclick="handleUpdateOrderStatus('${id}','processing')">Mark Processing</button></div>`;
     }
     if (status === 'processing') {
-      return `<div style="margin-top:6px"><button class="btn btn-secondary btn-sm" onclick="handleUpdateOrderStatus('${id}','ready')">Mark Ready</button></div>`;
+      return `<div style="margin-top:6px"><button class="btn btn-progress btn-sm" onclick="handleUpdateOrderStatus('${id}','ready')">Mark Ready</button></div>`;
     }
     if (status === 'ready') {
-      return `<div style="margin-top:6px"><button class="btn btn-secondary btn-sm" onclick="handleUpdateOrderStatus('${id}','delivered')">Mark Delivered</button></div>`;
+      return `<div style="margin-top:6px"><button class="btn btn-confirm btn-sm" onclick="handleUpdateOrderStatus('${id}','delivered')">Mark Delivered</button></div>`;
     }
     return '';
   };
 
   if (activeOrdersEl) activeOrdersEl.textContent = String((state.producerOrders || []).length || 0);
 
+  // Render status filter pills
+  const filterStatuses = ['all', 'pending', 'confirmed', 'processing', 'ready', 'delivered', 'rejected'];
+  const filterHTML = `<div class="order-filter-bar">${filterStatuses.map(s => {
+    const label = s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1);
+    const count = s === 'all'
+      ? (state.producerOrders || []).length
+      : (state.producerOrders || []).filter(o => (o.status || '').toLowerCase() === s).length;
+    const active = state.producerOrderFilter === s ? ' active' : '';
+    return `<button class="order-filter-pill${active}" onclick="setProducerOrderFilter('${s}')">${label} <span class="order-filter-count">${count}</span></button>`;
+  }).join('')}</div>`;
+  document.querySelectorAll('.pdash-order-filters').forEach(el => { el.innerHTML = filterHTML; });
+
+  // Apply filter
+  const allOrders = state.producerOrders || [];
+  const filteredOrders = state.producerOrderFilter === 'all'
+    ? allOrders
+    : allOrders.filter(o => (o.status || '').toLowerCase() === state.producerOrderFilter);
+
   if (state.producerOrders === null) {
     setOrdersBody(loadingRow);
     if (!state.producerOrdersLoading) refreshProducerOrders();
-  } else if (Array.isArray(state.producerOrders) && state.producerOrders.length === 0) {
+  } else if (filteredOrders.length === 0) {
     setOrdersBody(emptyRow);
   } else {
-    const rows = (state.producerOrders || []).map(o => `
+    const toItemsDetail = (o) => {
+      const items = Array.isArray(o.items) ? o.items : [];
+      if (items.length === 0) return '<div style="color:var(--text-muted);font-size:12px;margin-top:4px">No items</div>';
+      return `<div class="order-items-list">${items.map(i => {
+        const name = i.product_name || i.product_name_at_time_of_order || 'Product';
+        const qty = i.quantity;
+        const price = Number(i.price || i.price_at_time_of_order || 0).toFixed(2);
+        const unit = i.unit || i.unit_at_time_of_order || 'unit';
+        const total = Number(i.item_total || (i.price * i.quantity) || 0).toFixed(2);
+        return `<div class="order-item-row">
+          <span class="order-item-qty">${qty}×</span>
+          <span class="order-item-name">${name}</span>
+          <span class="order-item-price">£${price}/${unit}</span>
+          <span class="order-item-total">£${total}</span>
+        </div>`;
+      }).join('')}</div>`;
+    };
+
+    const rows = filteredOrders.map(o => `
       <tr>
         <td>${toOrderId(o)}</td>
         <td>${toCustomerName(o)}</td>
         <td style="font-size:12px">${toDate(o)}</td>
         <td style="font-size:12px">${toDeliveryDate(o)}</td>
-        <td style="font-size:12px">${toItemsCount(o)}</td>
+        <td>
+          <span style="font-size:13px;font-weight:600;color:var(--charcoal)">${toItemsCount(o)} item${Number(toItemsCount(o)) !== 1 ? 's' : ''}</span>
+          ${toItemsDetail(o)}
+        </td>
         <td style="font-weight:700">${formatMoney(toTotal(o))}</td>
         <td>
           <span class="status-pill status-${toStatus(o).toLowerCase()}">${toStatus(o)}</span>
@@ -1087,7 +1253,7 @@ function handleAddProduct(e) {
       document.getElementById('prod-stock').value = '';
       const imgEl = document.getElementById('prod-image-url');
       if (imgEl) imgEl.value = '';
-      document.getElementById('prod-unit').value = '';
+      document.getElementById('prod-unit').value = 'each';
       document.getElementById('prod-harvest').value = '';
       document.getElementById('prod-organic').value = 'false';
       document.querySelectorAll('input[name="allergen"]:checked').forEach(cb => cb.checked = false);
@@ -1272,7 +1438,15 @@ async function handleReorder(orderId) {
     navigate('cart');
     showToast('Reorder complete.', 'success');
   } catch (err) {
-    showToast(apiErrorMessage(err, 'Could not reorder.'), 'error');
+    const msg = err && err.message ? err.message : '';
+    if (msg.toLowerCase().includes('stock') || msg.toLowerCase().includes('insufficient') || (err.body && JSON.stringify(err.body).toLowerCase().includes('stock'))) {
+      showToast('Some items could not be re-added — product is out of stock.', 'error');
+    } else {
+      showToast(apiErrorMessage(err, 'Could not reorder.'), 'error');
+    }
+    // Still navigate to cart so user sees what was added
+    const cart = await getCart().catch(() => null);
+    if (cart) { setCartFromApiResponse(cart); navigate('cart'); }
   }
 }
 
@@ -1301,6 +1475,11 @@ async function refreshCustomerOrders() {
     state.customerOrdersLoading = false;
     renderCustomerDash();
   }
+}
+
+function setProducerOrderFilter(f) {
+  state.producerOrderFilter = f;
+  renderProducerDash();
 }
 
 function setProducerTab(tab) {
@@ -1341,11 +1520,11 @@ function renderCustomerDash() {
 
   const loadingRow = `
     <tr>
-      <td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted);font-size:15px">
+      <td colspan="5" style="text-align:center;padding:32px;color:var(--text-muted);font-size:15px">
         Loading your orders…
       </td>
     </tr>`;
-  const emptyRow = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted);font-size:15px">You haven’t placed any orders yet. When you checkout, your orders will appear here.</td></tr>';
+  const emptyRow = "<tr><td colspan=\"5\" style=\"text-align:center;padding:32px;color:var(--text-muted);font-size:15px\">You have not placed any orders yet. When you checkout, your orders will appear here.</td></tr>";
 
   if (state.customerOrders === null) {
     ordTable.innerHTML = loadingRow;
@@ -1358,6 +1537,29 @@ function renderCustomerDash() {
     return;
   }
 
+  // Render status filter pills
+  const allCustOrders = state.customerOrders || [];
+  const custFilterStatuses = ['all', 'pending', 'confirmed', 'processing', 'ready', 'delivered', 'cancelled', 'rejected'];
+  const custFilterEl = document.getElementById('cdash-order-filters');
+  if (custFilterEl) {
+    custFilterEl.innerHTML = `<div class="order-filter-bar">${custFilterStatuses.map(s => {
+      const label = s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1);
+      const count = s === 'all' ? allCustOrders.length : allCustOrders.filter(o => (o.status || '').toLowerCase() === s).length;
+      if (s !== 'all' && count === 0) return '';
+      const active = state.customerOrderFilter === s ? ' active' : '';
+      return `<button class="order-filter-pill${active}" onclick="setCustomerOrderFilter('${s}')">${label} <span class="order-filter-count">${count}</span></button>`;
+    }).filter(Boolean).join('')}</div>`;
+  }
+
+  const filteredCustOrders = state.customerOrderFilter === 'all'
+    ? allCustOrders
+    : allCustOrders.filter(o => (o.status || '').toLowerCase() === state.customerOrderFilter);
+
+  if (filteredCustOrders.length === 0 && allCustOrders.length > 0) {
+    ordTable.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--text-muted);font-size:15px">No orders match this filter.</td></tr>';
+    return;
+  }
+
   const formatMoney = (v) => {
     const n = typeof v === 'string' ? parseFloat(v) : Number(v);
     const safe = Number.isFinite(n) ? n : 0;
@@ -1365,29 +1567,79 @@ function renderCustomerDash() {
   };
 
   const toOrderId = (o) => o.invoice_number ?? o.id ?? '—';
-  const toDate = (o) => o.created_at ?? o.order_date ?? '—';
-  const toProducers = (o) => {
-    const groups = Array.isArray(o.producer_groups) ? o.producer_groups : [];
-    const names = groups.map(g => g.producer_info?.business_name || g.producer_info?.email).filter(Boolean);
-    return names.length ? names.join(', ') : '—';
-  };
-  const toItemsCount = (o) => {
-    const groups = Array.isArray(o.producer_groups) ? o.producer_groups : [];
-    return groups.reduce((sum, g) => sum + ((Array.isArray(g.items) ? g.items.length : 0)), 0);
+  const toDate = (o) => {
+    const raw = o.created_at ?? o.order_date ?? '';
+    if (!raw) return '—';
+    try { return new Date(raw).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); } catch(e) { return String(raw).substring(0, 10); }
   };
   const toTotal = (o) => o.total_amount ?? o.total ?? 0;
-  const toStatus = (o) => (o.status || 'pending');
 
-  ordTable.innerHTML = state.customerOrders.map(o => `
+  const groupDetail = (o) => {
+    const groups = Array.isArray(o.producer_groups) ? o.producer_groups : [];
+    if (groups.length === 0) return '<em style="color:var(--text-muted)">No items</em>';
+    return groups.map(g => {
+      const name = g.producer_info?.business_name || g.producer_info?.email || 'Producer';
+      const gStatus = g.status || o.status || 'pending';
+      const items = Array.isArray(g.items) ? g.items : [];
+      const itemsHtml = items.map(i =>
+        `<div class="order-item-row">
+          <span class="order-item-qty">${i.quantity}×</span>
+          <span class="order-item-name">${i.product_name_at_time_of_order || 'Product'}</span>
+          <span class="order-item-total">£${Number(i.item_total || 0).toFixed(2)}</span>
+        </div>`
+      ).join('');
+      return `<div class="customer-order-group">
+        <div class="customer-order-group-header">
+          <span class="customer-order-group-name">${name}</span>
+          <span class="status-pill status-${gStatus.toLowerCase()}">${gStatus}</span>
+        </div>
+        <div class="order-items-list">${itemsHtml}</div>
+      </div>`;
+    }).join('');
+  };
+
+  const orderActions = (o) => {
+    const btns = [];
+    btns.push(`<button class="btn btn-secondary btn-sm" onclick="handleViewReceipt(${o.id})">Receipt</button>`);
+    if (o.can_cancel) {
+      btns.push(`<button class="btn btn-reject btn-sm" onclick="handleCancelOrder(${o.id})">Cancel</button>`);
+    }
+    btns.push(`<button class="btn btn-secondary btn-sm" onclick="handleReorder(${o.id})">Reorder</button>`);
+    return `<div style="display:flex;flex-direction:column;gap:4px">${btns.join('')}</div>`;
+  };
+
+  ordTable.innerHTML = filteredCustOrders.map(o => `
     <tr>
       <td style="font-weight:600">${toOrderId(o)}</td>
-      <td>${toDate(o)}</td>
-      <td style="font-size:12px">${toProducers(o)}</td>
-      <td style="font-size:12px">${toItemsCount(o)}</td>
+      <td style="font-size:12px">${toDate(o)}</td>
+      <td>${groupDetail(o)}</td>
       <td style="font-weight:700">${formatMoney(toTotal(o))}</td>
-      <td><span class="status-pill status-${toStatus(o).toLowerCase()}">${toStatus(o)}</span></td>
-      <td><button class="btn btn-secondary btn-sm" onclick="handleReorder(${o.id})">Reorder</button></td>
+      <td>${orderActions(o)}</td>
     </tr>`).join('');
+}
+
+async function handleViewReceipt(orderId) {
+  if (orderId == null) return;
+  try {
+    const order = await getOrder(orderId);
+    state.lastConfirmedOrder = order;
+    navigate('order-confirm');
+  } catch (err) {
+    showToast(apiErrorMessage(err, 'Could not load receipt.'), 'error');
+  }
+}
+
+async function handleCancelOrder(orderId) {
+  if (orderId == null) return;
+  const ok = window.confirm('Are you sure you want to cancel this order?');
+  if (!ok) return;
+  try {
+    await cancelOrder(orderId);
+    showToast('Order cancelled.', 'success');
+    refreshCustomerOrders();
+  } catch (err) {
+    showToast(apiErrorMessage(err, 'Could not cancel order.'), 'error');
+  }
 }
 
 function handleUpdateProfile() {
@@ -1408,10 +1660,96 @@ function handleUpdateProfile() {
     .catch(err => showToast(apiErrorMessage(err, 'Could not update profile.'), 'error'));
 }
 
+function setCustomerOrderFilter(f) {
+  state.customerOrderFilter = f;
+  renderCustomerDash();
+}
+
 function setCustomerTab(tab) {
   state.customerDashTab = tab;
   renderCustomerDash();
   if (tab === 'orders') refreshCustomerOrders();
+}
+
+// ---- ORDER CONFIRMATION PAGE ----
+function renderOrderConfirmation(order) {
+  const el = document.getElementById('order-confirm-content');
+  if (!el) return;
+  if (!order) {
+    el.innerHTML = '<div style="text-align:center;padding:60px 0"><h2>No order to display</h2><button class="btn btn-primary" onclick="navigate(\'browse\')">Continue Shopping</button></div>';
+    return;
+  }
+
+  const fm = (v) => { const n = typeof v === 'string' ? parseFloat(v) : Number(v); return Number.isFinite(n) ? n.toFixed(2) : '0.00'; };
+  const fulfilmentLabel = { standard: 'Standard Delivery (3-5 days)', express: 'Express Delivery (1-2 days)', pickup: 'Pickup from producer' };
+
+  const groups = Array.isArray(order.producer_groups) ? order.producer_groups : [];
+  const productsSubtotal = groups.reduce((s, g) => s + parseFloat(g.subtotal || 0), 0);
+  const totalDelivery = groups.reduce((s, g) => s + parseFloat(g.delivery_fee || 0), 0);
+  const commission = productsSubtotal * 0.05;
+
+  const groupsHTML = groups.map(g => {
+    const biz = g.producer_info?.business_name || 'Producer';
+    const items = Array.isArray(g.items) ? g.items : [];
+    const itemsHTML = items.map(i => `
+      <div class="confirm-item">
+        <span class="confirm-item-qty">${i.quantity}x</span>
+        <span class="confirm-item-name">${i.product_name_at_time_of_order || 'Product'}</span>
+        <span class="confirm-item-unit">@ £${fm(i.price_at_time_of_order)}/${i.unit_at_time_of_order || 'unit'}</span>
+        <span class="confirm-item-total">£${fm(i.item_total)}</span>
+      </div>
+    `).join('');
+
+    return `
+      <div class="confirm-group">
+        <div class="confirm-group-header">
+          <strong>${biz}</strong>
+          <span class="status-pill status-${(g.status || 'pending').toLowerCase()}">${g.status || 'pending'}</span>
+        </div>
+        <div class="confirm-group-meta">
+          <span>${fulfilmentLabel[g.fulfilment_type] || g.fulfilment_type}</span>
+          <span>Delivery: ${g.delivery_date || order.delivery_date || '-'}</span>
+          <span>Fee: £${fm(g.delivery_fee)}</span>
+        </div>
+        <div class="confirm-items">${itemsHTML}</div>
+        <div class="confirm-group-subtotal">Subtotal: £${fm(g.subtotal)}</div>
+      </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="confirm-page">
+      <div class="confirm-header">
+        <div class="confirm-check">&#10003;</div>
+        <h1>Order Confirmed!</h1>
+        <p class="confirm-invoice">${order.invoice_number || 'Order #' + order.id}</p>
+        <p class="confirm-msg">Your order is being processed. You will see status updates in your dashboard as each producer prepares your items.</p>
+      </div>
+
+      <div class="confirm-sections">
+        <div class="confirm-card">
+          <h3>Items Ordered</h3>
+          ${groupsHTML}
+        </div>
+
+        <div class="confirm-card">
+          <h3>Delivery Details</h3>
+          <p style="margin:0;font-size:14px;color:var(--charcoal)">${order.delivery_address || '-'}, ${order.delivery_postcode || ''}</p>
+        </div>
+
+        <div class="confirm-card">
+          <h3>Payment Summary</h3>
+          <div class="confirm-summary-row"><span>Products subtotal</span><span>£${fm(productsSubtotal)}</span></div>
+          <div class="confirm-summary-row"><span>Delivery fees</span><span>£${fm(totalDelivery)}</span></div>
+          <div class="confirm-summary-row confirm-total"><span>Total paid</span><span>£${fm(order.total_amount)}</span></div>
+          <p class="confirm-commission">A 5% network commission (£${fm(commission)}) supports the Bristol Regional Food Network. Producers receive 95% of every sale.</p>
+        </div>
+      </div>
+
+      <div class="confirm-actions">
+        <button class="btn btn-primary" onclick="navigate('customer-dash')">View My Orders</button>
+        <button class="btn btn-secondary" onclick="navigate('browse')">Continue Shopping</button>
+      </div>
+    </div>`;
 }
 
 // ---- Admin Commission Report (TC-025) ----

@@ -183,6 +183,15 @@ class OrderProducerGroup(models.Model):
         'pickup': Decimal('0.00'),
     }
 
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('confirmed', 'Confirmed'),
+        ('processing', 'Processing'),
+        ('ready', 'Ready'),
+        ('delivered', 'Delivered'),
+        ('rejected', 'Rejected'),
+    ]
+
     order = models.ForeignKey(
         Order,
         on_delete=models.CASCADE,
@@ -194,6 +203,13 @@ class OrderProducerGroup(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='order_producer_groups'
+    )
+
+    # Per-group status — each producer progresses their own group independently
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='pending'
     )
 
     # Customer's fulfilment choice for this producer's items
