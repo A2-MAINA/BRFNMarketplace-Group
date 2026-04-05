@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import Order, OrderProducerGroup, OrderItem, OrderStatusHistory, Payment
+from .models import Order, OrderProducerGroup, OrderItem, OrderStatusHistory, Payment, Dispute
 
 
 class OrderItemInline(admin.TabularInline):
@@ -138,6 +138,55 @@ class PaymentAdmin(admin.ModelAdmin):
             'processed': '#10b981',
             'failed':    '#ef4444',
             'refunded':  '#6b7280',
+        }
+        colour = colours.get(obj.status, '#6b7280')
+        return format_html(
+            '<span style="background:{}; color:white; padding:3px 8px; '
+            'border-radius:4px; font-size:11px;">{}</span>',
+            colour, obj.get_status_display()
+        )
+    status_badge.short_description = 'Status'
+
+@admin.register(Dispute)
+class DisputeAdmin(admin.ModelAdmin):
+    list_display = (
+        'id', 'order_invoice', 'raised_by_email',
+        'reason_badge', 'status_badge', 'created_at', 'resolved_at'
+    )
+    list_filter = ('status', 'reason', 'created_at')
+    search_fields = ('order__invoice_number', 'raised_by__email', 'description')
+    readonly_fields = ('order', 'raised_by', 'created_at')
+
+    def order_invoice(self, obj):
+        return obj.order.invoice_number
+    order_invoice.short_description = 'Order'
+
+    def raised_by_email(self, obj):
+        return obj.raised_by.email
+    raised_by_email.short_description = 'Raised By'
+
+    def reason_badge(self, obj):
+        colours = {
+            'damaged':    '#ef4444',
+            'missing':    '#f59e0b',
+            'wrong_item': '#8b5cf6',
+            'quality':    '#3b82f6',
+            'other':      '#6b7280',
+        }
+        colour = colours.get(obj.reason, '#6b7280')
+        return format_html(
+            '<span style="background:{}; color:white; padding:3px 8px; '
+            'border-radius:4px; font-size:11px;">{}</span>',
+            colour, obj.get_reason_display()
+        )
+    reason_badge.short_description = 'Reason'
+
+    def status_badge(self, obj):
+        colours = {
+            'open':         '#f59e0b',
+            'under_review': '#3b82f6',
+            'resolved':     '#10b981',
+            'closed':       '#6b7280',
         }
         colour = colours.get(obj.status, '#6b7280')
         return format_html(

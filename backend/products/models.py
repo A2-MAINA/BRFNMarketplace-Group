@@ -172,3 +172,180 @@ class Allergen(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class Review(models.Model):
+    """
+    Customer review for a product after a delivered order.
+    
+    UK Legal compliance:
+    - Consumer Rights Act 2015: only customers who purchased the product can review
+    - UK GDPR: customer name anonymised in public display (first name + last initial only)
+    
+    Covers TC-023 (product reviews) and TC-024 (producer response to reviews).
+    """
+
+    RATING_CHOICES = [
+        (1, '1 Star'),
+        (2, '2 Stars'),
+        (3, '3 Stars'),
+        (4, '4 Stars'),
+        (5, '5 Stars'),
+    ]
+
+    # Which product is being reviewed
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='reviews'
+    )
+
+    # Who wrote the review — must be a customer with a delivered order for this product
+    customer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='reviews'
+    )
+
+    # Which order this review is for — used to verify purchase before allowing review
+    # String reference avoids circular import between products and orders apps
+    order = models.ForeignKey(
+        'orders.Order',
+        on_delete=models.CASCADE,
+        related_name='reviews'
+    )
+
+    # Star rating 1-5 — enforced at model level with choices
+    rating = models.PositiveIntegerField(choices=RATING_CHOICES)
+
+    # Optional written review — blank=True because a star rating alone is valid
+    comment = models.TextField(blank=True, default='')
+
+    # TC-024 — producer can publicly respond to this review
+    # blank=True because most reviews will not have a response initially
+    producer_response = models.TextField(blank=True, default='')
+
+    # Timestamp for when the producer responded — null until a response is added
+    producer_response_at = models.DateTimeField(null=True, blank=True)
+
+    # When the review was submitted
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # One review per customer per product per order — prevents spam reviews
+        # A customer who orders the same product twice can leave two reviews (one per order)
+        unique_together = ('product', 'customer', 'order')
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return (
+            f"{self.customer.email} — {self.product.name} — "
+            f"{self.rating} star{'s' if self.rating != 1 else ''}"
+        )
+
+
+class Notification(models.Model):
+    """
+    Tracks customer subscriptions for out-of-season product availability.
+    
+    When a customer sees a product marked as out_of_season, they can subscribe
+    to be notified when the producer marks it back as in_season.
+    
+    Triggered via Django signals — when Product.availability changes to in_season,
+    all Notification records for that product with notified=False are updated.
+    
+    Covers TC-016 (seasonal availability notifications).
+    """
+
+    # Which product the customer is watching
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='notifications'
+    )
+
+    # Which customer subscribed — must be authenticated
+    customer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='notifications'
+    )
+
+    # False = waiting to be notified. True = notification has been sent.
+    # Once notified, the subscription is considered fulfilled.
+    notified = models.BooleanField(default=False)
+
+    # When the notification was triggered — null until product comes back in season
+    notified_at = models.DateTimeField(null=True, blank=True)
+
+    # When the customer subscribed
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # One subscription per customer per product
+        # Prevents a customer subscribing multiple times to the same product
+        unique_together = ('product', 'customer')
+        ordering = ['-created_at']
+
+    def __str__(self):
+        status = 'Notified' if self.notified else 'Waiting'
+        return f"{self.customer.email} watching {self.product.name} — {status}"
+
+
+class WholesalePrice(models.Model):
+    """
+    Allows producers to set special wholesale prices for restaurant and
+    community group buyers.
+    
+    Standard customers always see the regular Product.price.
+    Restaurant and community group users see the wholesale price instead
+    when it exists and they meet the minimum quantity requirement.
+    
+    Covers TC-019 (community group bulk ordering) and TC-020 (restaurant wholesale pricing).
+    """
+
+    BUYER_TYPE_CHOICES = [
+        ('restaurant', 'Restaurant'),
+        ('community_group', 'Community Group'),
+    ]
+
+    # Which product this wholesale price applies to
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='wholesale_prices'
+    )
+
+    # Which buyer type gets this price — restaurant or community group
+    # Matches the role values in User.ROLE_CHOICES exactly
+    buyer_type = models.CharField(max_length=20, choices=BUYER_TYPE_CHOICES)
+
+    # The discounted wholesale price — must be less than Product.price
+    # Validated in the serializer, not the model — keeps model clean
+    price = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))]
+    )
+
+    # Minimum quantity the buyer must order to qualify for wholesale price
+    # Default 1 — producer can set higher minimums (e.g. minimum 10 kg for restaurant pricing)
+    minimum_quantity = models.PositiveIntegerField(default=1)
+
+    # Producer can temporarily disable without deleting the record
+    is_active = models.BooleanField(default=True)
+
+    # When this wholesale price was created
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # One wholesale price per product per buyer type
+        # A producer cannot set two different restaurant prices for the same product
+        unique_together = ('product', 'buyer_type')
+        ordering = ['buyer_type']
+
+    def __str__(self):
+        return (
+            f"{self.product.name} — {self.get_buyer_type_display()} — "
+            f"£{self.price} (min {self.minimum_quantity})"
+        )

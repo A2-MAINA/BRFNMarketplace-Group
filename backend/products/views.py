@@ -49,3 +49,5 @@ class AllergenList(generics.ListAPIView):
     queryset = Allergen.objects.all()
     serializer_class = AllergenSerializer
     permission_classes = [permissions.AllowAny]
+
+

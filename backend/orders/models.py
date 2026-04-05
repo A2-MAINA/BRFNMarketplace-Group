@@ -479,3 +479,88 @@ class Payment(models.Model):
             f"Payment for Order #{self.order.pk} — "
             f"£{self.amount} — {self.get_status_display()}"
         )
+
+class Dispute(models.Model):
+    """
+    Allows customers to raise a formal dispute on an order.
+    
+    Examples: items arrived damaged, missing items, wrong items delivered.
+    Admin reviews and resolves disputes. Producer is notified.
+    
+    UK Legal compliance:
+    - Consumer Rights Act 2015: customers have the right to dispute goods
+      that do not match their description or arrive damaged
+    - Alternative Dispute Resolution Regulations 2015: requires a formal
+      dispute process for online marketplaces
+    
+    Covers TC-014 (dispute resolution).
+    """
+
+    REASON_CHOICES = [
+        ('damaged', 'Items Arrived Damaged'),
+        ('missing', 'Items Missing From Order'),
+        ('wrong_item', 'Wrong Items Delivered'),
+        ('quality', 'Quality Below Expected Standard'),
+        ('other', 'Other'),
+    ]
+
+    STATUS_CHOICES = [
+        ('open', 'Open'),               # Dispute raised, awaiting review
+        ('under_review', 'Under Review'), # Admin is investigating
+        ('resolved', 'Resolved'),        # Dispute resolved in customer's favour
+        ('closed', 'Closed'),            # Dispute closed — no further action
+    ]
+
+    # Which order the dispute is about
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.CASCADE,
+        related_name='disputes'
+    )
+
+    # Who raised the dispute — must be the order's customer
+    raised_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='disputes_raised'
+    )
+
+    # Category of dispute — helps admin triage quickly
+    reason = models.CharField(max_length=20, choices=REASON_CHOICES)
+
+    # Full description of the issue from the customer
+    description = models.TextField()
+
+    # Current status of the dispute
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='open'
+    )
+
+    # Admin's resolution note — blank until dispute is resolved
+    resolution_note = models.TextField(blank=True, default='')
+
+    # Who resolved the dispute — admin user, SET_NULL so record survives if admin is deleted
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='disputes_resolved'
+    )
+
+    # When the dispute was raised
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    # When the dispute was resolved or closed — null until then
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return (
+            f"Dispute #{self.pk} — Order {self.order.invoice_number} — "
+            f"{self.get_reason_display()} — {self.get_status_display()}"
+        )
