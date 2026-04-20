@@ -58,6 +58,11 @@
     </div>
 
     <div class="form-group" style="margin-top:14px">
+      <label for="checkout-special-instructions">Special delivery instructions <span style="color:var(--text-muted);font-weight:400">(optional)</span></label>
+      <textarea class="form-control" id="checkout-special-instructions" rows="2" placeholder="e.g. Leave in porch, ring doorbell"></textarea>
+    </div>
+
+    <div class="form-group" style="margin-top:14px">
       <label>Card Details <span class="req">*</span></label>
       <div id="stripe-card-element" style="padding:12px;border:1px solid rgba(0,0,0,0.14);border-radius:12px"></div>
       <div id="stripe-card-error" style="color:#b91c1c;font-size:13px;margin-top:8px"></div>
@@ -66,6 +71,60 @@
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
       <button class="btn btn-secondary" onclick="closeCheckoutModal()" type="button">Cancel</button>
       <button class="btn btn-gold" id="stripe-pay-btn" onclick="handleStripePay()" type="button">Pay</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SPRINT 3 MODALS ==================== -->
+<div id="dispute-modal-overlay" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:10000;display:flex;align-items:center;justify-content:center;padding:18px">
+  <div style="width:min(480px,100%);background:#fff;border-radius:14px;padding:20px;box-shadow:0 18px 60px rgba(0,0,0,0.22)">
+    <h3 style="margin:0 0 12px">Raise a dispute</h3>
+    <p style="margin:0 0 14px;font-size:14px;color:var(--text-muted)">Order <strong id="dispute-modal-order-label">—</strong></p>
+    <input type="hidden" id="dispute-modal-order-id" />
+    <div class="form-group">
+      <label style="display:block;margin-bottom:6px">Reason</label>
+      <select id="dispute-reason" class="form-control">
+        <option value="damaged">Items Arrived Damaged</option>
+        <option value="missing">Items Missing From Order</option>
+        <option value="wrong_item">Wrong Items Delivered</option>
+        <option value="quality">Quality Below Expected Standard</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label style="display:block;margin-bottom:6px">Description <span class="req">*</span></label>
+      <textarea id="dispute-description" class="form-control" rows="4" placeholder="Describe what went wrong…"></textarea>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+      <button type="button" class="btn btn-secondary" onclick="closeDisputeModal()">Cancel</button>
+      <button type="button" class="btn btn-primary" onclick="submitRaiseDispute()">Submit dispute</button>
+    </div>
+  </div>
+</div>
+
+<div id="wholesale-modal-overlay" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:10000;display:flex;align-items:center;justify-content:center;padding:18px">
+  <div style="width:min(440px,100%);background:#fff;border-radius:14px;padding:20px;box-shadow:0 18px 60px rgba(0,0,0,0.22)">
+    <h3 style="margin:0 0 8px">Set wholesale price</h3>
+    <p style="margin:0 0 14px;font-size:14px;color:var(--text-muted)" id="wholesale-modal-product-name">—</p>
+    <input type="hidden" id="wholesale-modal-product-id" />
+    <div class="form-group">
+      <label style="display:block;margin-bottom:6px">Buyer type</label>
+      <select id="wholesale-buyer-type" class="form-control">
+        <option value="restaurant">Restaurant</option>
+        <option value="community_group">Community Group</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label style="display:block;margin-bottom:6px">Wholesale price (£) <span class="req">*</span></label>
+      <input type="number" id="wholesale-price-input" class="form-control" step="0.01" min="0.01" placeholder="e.g. 1.80" />
+    </div>
+    <div class="form-group">
+      <label style="display:block;margin-bottom:6px">Minimum quantity</label>
+      <input type="number" id="wholesale-min-qty" class="form-control" min="1" value="1" />
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+      <button type="button" class="btn btn-secondary" onclick="closeWholesaleModal()">Cancel</button>
+      <button type="button" class="btn btn-primary" onclick="submitWholesaleModal()">Save</button>
     </div>
   </div>
 </div>
@@ -435,6 +494,8 @@
           <li data-tab="orders"      onclick="setProducerTab('orders')">Orders</li>
           <li data-tab="products"    onclick="setProducerTab('products')">My Products</li>
           <li data-tab="add-product" onclick="setProducerTab('add-product')">Add Product</li>
+          <li data-tab="reviews"     onclick="setProducerTab('reviews')">Reviews</li>
+          <li data-tab="analytics"   onclick="setProducerTab('analytics')">Analytics</li>
           <li data-tab="payments"    onclick="setProducerTab('payments')">Payments</li>
           <li class="danger"         onclick="logout()">Log out</li>
         </ul>
@@ -594,6 +655,22 @@
           </div>
         </div>
 
+        <!-- Reviews (Sprint 3) -->
+        <div class="dashboard-section" id="pdash-reviews">
+          <div class="dash-header"><h2>Customer Reviews</h2></div>
+          <div id="pdash-reviews-content" class="form-card">
+            <p style="color:var(--text-muted);font-size:14px">Loading reviews…</p>
+          </div>
+        </div>
+
+        <!-- Analytics (Sprint 3) -->
+        <div class="dashboard-section" id="pdash-analytics">
+          <div class="dash-header"><h2>Analytics</h2></div>
+          <div id="pdash-analytics-content" class="form-card">
+            <p style="color:var(--text-muted);font-size:14px">Loading analytics…</p>
+          </div>
+        </div>
+
         <!-- Payments -->
         <div class="dashboard-section" id="pdash-payments">
           <div class="dash-header"><h2>Payment Settlements</h2></div>
@@ -638,6 +715,7 @@
         </div>
         <ul class="sidebar-nav" id="customer-sidebar">
           <li class="active" data-tab="orders"  onclick="setCustomerTab('orders')">My Orders</li>
+          <li data-tab="notifications" onclick="setCustomerTab('notifications')">Notifications</li>
           <li data-tab="profile" onclick="setCustomerTab('profile')">My Profile</li>
           <li class="danger" onclick="logout()">Log out</li>
         </ul>
@@ -653,6 +731,12 @@
               <thead><tr><th>Order</th><th>Date</th><th>Producers</th><th>Items</th><th>Total</th><th>Status</th><th>Action</th></tr></thead>
               <tbody id="cdash-orders-table"></tbody>
             </table>
+          </div>
+        </div>
+        <div class="dashboard-section" id="cdash-notifications">
+          <div class="dash-header"><h2>Availability notifications</h2></div>
+          <div id="cdash-notifications-content" class="form-card">
+            <p style="color:var(--text-muted);font-size:14px">Loading…</p>
           </div>
         </div>
         <div class="dashboard-section" id="cdash-profile">
@@ -681,8 +765,10 @@
           <h4 id="adash-user-name">Admin</h4>
           <span class="role-tag">Admin</span>
         </div>
-        <ul class="sidebar-nav">
-          <li class="active" onclick="navigate('admin-dash')">Commission Report</li>
+        <ul class="sidebar-nav" id="admin-sidebar">
+          <li class="active" data-tab="commission" onclick="setAdminTab('commission')">Commission Report</li>
+          <li data-tab="revenue" onclick="setAdminTab('revenue')">Platform Revenue</li>
+          <li data-tab="disputes" onclick="setAdminTab('disputes')">Disputes</li>
         </ul>
       </aside>
       <main id="admin-dash-content">
@@ -728,6 +814,56 @@
               </table>
             </div>
 
+          </div>
+        </div>
+        <div class="dashboard-section" id="adash-revenue">
+          <div class="dash-header"><h2>Platform revenue (Sprint 3)</h2></div>
+          <div class="form-card" style="max-width:960px">
+            <div class="form-row">
+              <div class="form-group">
+                <label>From</label>
+                <input type="date" id="adash-rev-from" class="form-control" />
+              </div>
+              <div class="form-group">
+                <label>To</label>
+                <input type="date" id="adash-rev-to" class="form-control" />
+              </div>
+            </div>
+            <div style="display:flex;gap:12px;margin-top:10px;flex-wrap:wrap">
+              <button class="btn btn-primary btn-sm" type="button" onclick="handleLoadPlatformRevenue()">Load report</button>
+              <button class="btn btn-secondary btn-sm" type="button" onclick="handleExportRevenueCSV()">Export CSV</button>
+            </div>
+            <div id="adash-revenue-summary" style="margin-top:20px"></div>
+            <div class="data-table" style="margin-top:16px">
+              <table>
+                <thead><tr><th>Producer</th><th>Sales</th><th>Commission</th><th>Payout</th></tr></thead>
+                <tbody id="adash-revenue-tbody">
+                  <tr><td colspan="4" style="text-align:center;padding:24px;color:var(--text-muted);font-size:14px">Load a report to see rows.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="dashboard-section" id="adash-disputes">
+          <div class="dash-header"><h2>Dispute management</h2></div>
+          <div class="form-card" style="max-width:720px">
+            <p style="font-size:14px;color:var(--text-muted);margin-bottom:12px">Open disputes from customers. If your backend exposes <code>GET /api/admin/disputes/</code>, the list loads automatically. Otherwise resolve by dispute ID.</p>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+              <button class="btn btn-secondary btn-sm" type="button" onclick="refreshAdminDisputesList()">Refresh list</button>
+            </div>
+            <div id="adash-disputes-list" class="data-table"></div>
+            <div style="margin-top:20px;padding-top:16px;border-top:1px solid rgba(0,0,0,0.08)">
+              <h4 style="margin:0 0 10px;font-size:15px">Resolve by ID</h4>
+              <div class="form-row">
+                <div class="form-group"><label>Dispute ID</label><input type="text" id="adash-resolve-dispute-id" class="form-control" placeholder="e.g. 12" /></div>
+                <div class="form-group">
+                  <label>Status</label>
+                  <select id="adash-resolve-status" class="form-control"><option value="resolved">resolved</option><option value="closed">closed</option></select>
+                </div>
+              </div>
+              <div class="form-group"><label>Resolution note</label><textarea id="adash-resolve-note" class="form-control" rows="2" placeholder="What action was taken…"></textarea></div>
+              <button class="btn btn-primary btn-sm" type="button" onclick="handleAdminResolveDispute()">Submit resolution</button>
+            </div>
           </div>
         </div>
       </main>
@@ -776,6 +912,11 @@
 <script src="src/services/orders.js"></script>
 <script src="src/services/paymentService.js"></script>
 <script src="src/services/adminService.js"></script>
+<script src="src/services/reviewService.js"></script>
+<script src="src/services/disputeService.js"></script>
+<script src="src/services/notificationService.js"></script>
+<script src="src/services/analyticsService.js"></script>
+<script src="src/services/wholesaleService.js"></script>
 <script src="https://js.stripe.com/v3/"></script>
 <script src="app.js"></script>
 <script>

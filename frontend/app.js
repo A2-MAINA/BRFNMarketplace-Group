@@ -38,6 +38,7 @@ function apiProductToUI(apiP) {
       : null;
   const initials = producerName.split(' ').map(w => w[0]).join('').toUpperCase().substring(0, 2);
   const availMap = { 'in_season': 'In Season', 'out_of_season': 'Out of Season', 'pre_order': 'Pre-Order' };
+  const rawAvail = apiP.availability || 'in_season';
   return {
     id: apiP.id,
     name: apiP.name,
@@ -50,6 +51,7 @@ function apiProductToUI(apiP) {
     producerId: producerId != null ? Number(producerId) : null,
     producerInitial: initials,
     availability: availMap[apiP.availability] || apiP.availability || 'Available',
+    availabilityRaw: rawAvail,
     stock: apiP.stock_quantity || 0,
     allergens: allergenList,
     organic: apiP.is_organic === true,
@@ -109,6 +111,11 @@ const state = {
   customerOrdersLoading: false,
   producerSettlementReport: null,
   producerSettlementLoading: false,
+  adminDashTab: 'commission',
+  /** @type {{ productId: number, reviewId: number, text?: string } | null} */
+  producerRespondDraft: null,
+  /** Producer-set wholesale snapshot for dashboard badges: productId -> { restaurant?, community_group? } */
+  wholesaleLocal: {},
   checkout: {
     stripeProcessing: false,
   },
@@ -234,7 +241,9 @@ function navigate(page, extra) {
     }
   }
   if (page === 'customer-dash') renderCustomerDash();
-  if (page === 'admin-dash') renderAdminDash();
+  if (page === 'admin-dash') {
+    renderAdminDash();
+  }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -259,6 +268,26 @@ function productCardHTML(p) {
   if (p.organic) badges.push(`<span class="badge badge-organic">Organic</span>`);
   badges.push(`<span class="badge badge-season">${p.availability || 'Available'}</span>`);
 
+  const trade =
+    p.wholesalePrice != null &&
+    Number(p.wholesalePrice) > 0 &&
+    Number(p.wholesalePrice) < Number(p.price);
+  const minNote = p.wholesaleMin > 1 ? ' · min ' + p.wholesaleMin : '';
+  const priceBlock = trade
+    ? '<span class="product-price" style="color:var(--forest-mid)">£' +
+      Number(p.wholesalePrice).toFixed(2) +
+      '</span><span class="product-unit"> trade / ' +
+      p.unit +
+      '</span><span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px">Retail £' +
+      p.price.toFixed(2) +
+      minNote +
+      '</span>'
+    : '<span class="product-price">£' +
+      p.price.toFixed(2) +
+      '</span><span class="product-unit"> / ' +
+      p.unit +
+      '</span>';
+
   return `
     <div class="product-card" onclick="navigate('product', ${p.id})">
       <div class="product-img">
@@ -276,14 +305,32 @@ function productCardHTML(p) {
         <p class="product-desc">${p.description.substring(0, 85)}…</p>
         <div class="allergen-row">${allergenHTML}</div>
         <div class="product-footer">
-          <div>
-            <span class="product-price">£${p.price.toFixed(2)}</span>
-            <span class="product-unit"> / ${p.unit}</span>
-          </div>
+          <div>${priceBlock}</div>
           <button class="add-btn" onclick="event.stopPropagation(); addToCart(${p.id})" title="Add to cart">+</button>
         </div>
       </div>
     </div>`;
+}
+
+async function enrichProductsWholesale(products) {
+  const role = state.currentUser && state.currentUser.role;
+  if (role !== 'restaurant' && role !== 'community_group') return products;
+  const out = await Promise.all(
+    products.map(async (p) => {
+      try {
+        const w = await getWholesalePrice(p.id);
+        const price = w && w.price != null ? parseFloat(w.price) : NaN;
+        const minQ = w && w.minimum_quantity != null ? Number(w.minimum_quantity) : 1;
+        if (Number.isFinite(price) && price > 0) {
+          return { ...p, wholesalePrice: price, wholesaleMin: minQ };
+        }
+      } catch (_) {
+        /* no wholesale row */
+      }
+      return { ...p, wholesalePrice: null };
+    })
+  );
+  return out;
 }
 
 function renderBrowse() {
@@ -303,6 +350,21 @@ function renderBrowse() {
 
   if (products.length === 0) {
     grid.innerHTML = `<div class="no-results"><h3>No products found</h3><p>Try a different category or search term.</p></div>`;
+    return;
+  }
+
+  const role = state.currentUser && state.currentUser.role;
+  if (role === 'restaurant' || role === 'community_group') {
+    grid.innerHTML = '<p class="loading-msg" style="padding:24px">Loading trade prices…</p>';
+    enrichProductsWholesale(products)
+      .then((enriched) => {
+        if (state.currentPage !== 'browse') return;
+        grid.innerHTML = enriched.map(productCardHTML).join('');
+      })
+      .catch(() => {
+        if (state.currentPage !== 'browse') return;
+        grid.innerHTML = products.map(productCardHTML).join('');
+      });
   } else {
     grid.innerHTML = products.map(productCardHTML).join('');
   }
@@ -311,6 +373,572 @@ function renderBrowse() {
 function setCategory(id) {
   state.currentCategory = id;
   renderBrowse();
+}
+
+// ---- SPRINT 3: reviews, notify, disputes, wholesale, analytics ----
+function escHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function normalizeReviewsPayload(data) {
+  if (!data) return { list: [], average: null, count: 0 };
+  const list = Array.isArray(data) ? data : (data.reviews || data.results || []);
+  const average =
+    data.average_rating != null
+      ? Number(data.average_rating)
+      : data.avg_rating != null
+        ? Number(data.avg_rating)
+        : null;
+  return { list, average, count: data.count != null ? data.count : list.length };
+}
+
+function orderLineHasProduct(o, productId) {
+  const pid = Number(productId);
+  const groups = o.producer_groups || o.groups || [];
+  for (const g of groups) {
+    const items = g.items || [];
+    for (const it of items) {
+      const p = it.product_id != null ? it.product_id : it.product && it.product.id;
+      if (Number(p) === pid) return true;
+    }
+  }
+  return false;
+}
+
+function findEligibleReviewOrders(productId) {
+  const orders = state.customerOrders;
+  if (!Array.isArray(orders)) return [];
+  const pid = Number(productId);
+  const out = [];
+  const seen = new Set();
+  for (const o of orders) {
+    if (String(o.status || '').toLowerCase() !== 'delivered') continue;
+    if (!orderLineHasProduct(o, pid)) continue;
+    const oid = o.id;
+    if (oid == null || seen.has(oid)) continue;
+    seen.add(oid);
+    out.push({ orderId: oid, label: 'Order #' + (o.invoice_number || oid) });
+  }
+  return out;
+}
+
+function renderReviewsSectionHtml(productId, p, payload) {
+  const list = payload.list || [];
+  let avg = payload.average;
+  if ((avg == null || Number.isNaN(avg)) && list.length) {
+    const sum = list.reduce((s, r) => s + (Number(r.rating) || 0), 0);
+    avg = sum / list.length;
+  }
+  const dist = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+  list.forEach((r) => {
+    const n = Math.min(5, Math.max(1, parseInt(r.rating, 10) || 1));
+    if (dist[n] !== undefined) dist[n]++;
+  });
+  const avgStr = avg != null && !Number.isNaN(avg) ? avg.toFixed(1) : '—';
+  const maxC = Math.max(1, list.length);
+  const bars = [5, 4, 3, 2, 1]
+    .map((star) => {
+      const c = dist[star] || 0;
+      const pct = Math.round((c / maxC) * 100);
+      return `<div style="display:flex;align-items:center;gap:8px;font-size:13px;margin:4px 0"><span style="width:28px">${star}★</span><div style="flex:1;height:8px;background:#eee;border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--gold)"></div></div><span style="width:24px;text-align:right;color:var(--text-muted)">${c}</span></div>`;
+    })
+    .join('');
+  const items = list
+    .map((r) => {
+      const name = escHtml(r.customer_name || r.customer || 'Customer');
+      const rt = Math.min(5, Math.max(0, parseInt(r.rating, 10) || 0));
+      const resp = r.producer_response
+        ? `<div style="margin-top:10px;padding:10px 12px;background:#f8faf8;border-left:3px solid var(--forest-mid);font-size:14px"><strong>Producer replied:</strong> ${escHtml(r.producer_response)}</div>`
+        : '';
+      return `<div style="border-bottom:1px solid rgba(0,0,0,0.08);padding:16px 0">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <strong>${name}</strong>
+        <span style="color:var(--gold)">${'★'.repeat(rt)}${'☆'.repeat(5 - rt)}</span>
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);margin:4px 0">${escHtml(r.created_at || '')}</div>
+      <p style="margin:8px 0 0;font-size:15px;color:var(--text-body)">${escHtml(r.comment || '')}</p>
+      ${resp}
+    </div>`;
+    })
+    .join('');
+  return `
+    <section>
+      <h3 style="font-size:22px;margin:0 0 8px">Reviews</h3>
+      <p style="font-size:15px;color:var(--text-muted);margin:0 0 16px">${avgStr !== '—' ? avgStr + ' ★ average · ' : ''}${list.length} review${list.length === 1 ? '' : 's'}</p>
+      <div style="display:flex;gap:32px;flex-wrap:wrap;margin-bottom:24px">
+        <div style="min-width:200px">${bars}</div>
+      </div>
+      <div>${items || '<p style="color:var(--text-muted)">No reviews yet.</p>'}</div>
+      <div id="product-review-form-slot" style="margin-top:24px;padding-top:20px;border-top:1px solid rgba(0,0,0,0.08)"></div>
+    </section>`;
+}
+
+function buildReviewFormHtml(productId, eligible) {
+  const opts = eligible.map((e) => `<option value="${e.orderId}">${escHtml(e.label)}</option>`).join('');
+  return `
+    <h4 style="margin:0 0 10px;font-size:16px">Write a review</h4>
+    <div class="form-group"><label>Order</label><select id="review-order-id" class="form-control">${opts}</select></div>
+    <div class="form-group"><label>Rating</label><select id="review-rating" class="form-control">${[5, 4, 3, 2, 1].map((n) => `<option value="${n}">${n} stars</option>`).join('')}</select></div>
+    <div class="form-group"><label>Comment (optional)</label><textarea id="review-comment" class="form-control" rows="2"></textarea></div>
+    <button type="button" class="btn btn-primary btn-sm" onclick="submitProductReview(${productId})">Submit review</button>`;
+}
+
+function submitProductReview(productId) {
+  const orderId = document.getElementById('review-order-id')?.value;
+  const rating = parseInt(document.getElementById('review-rating')?.value || '5', 10);
+  const comment = document.getElementById('review-comment')?.value?.trim() || '';
+  if (!orderId) return;
+  submitReview(productId, { order: Number(orderId), rating, comment })
+    .then(() => {
+      showToast('Review submitted.', 'success');
+      renderProductDetail(productId);
+    })
+    .catch((err) => showToast(apiErrorMessage(err, 'Could not submit review.'), 'error'));
+}
+
+function handleNotifyToggle(productId, subscribe) {
+  const fn = subscribe ? subscribeToProduct : unsubscribeFromProduct;
+  fn(productId)
+    .then(() => {
+      showToast(
+        subscribe ? 'You will be notified when this product is back in season.' : 'Unsubscribed.',
+        'success'
+      );
+      if (state.currentProduct) hydrateProductDetailSprint3(productId, state.currentProduct);
+    })
+    .catch((err) => showToast(apiErrorMessage(err, 'Could not update notification.'), 'error'));
+}
+
+async function hydrateProductDetailSprint3(productId, p) {
+  const notifyEl = document.getElementById('product-detail-notify-wrap');
+  const reviewsEl = document.getElementById('product-reviews-root');
+  const priceMain = document.getElementById('product-detail-price-main');
+  const priceSuffix = document.getElementById('product-detail-price-suffix');
+
+  const role = state.currentUser && state.currentUser.role;
+  if (role === 'restaurant' || role === 'community_group') {
+    try {
+      const w = await getWholesalePrice(productId);
+      const wp = w && w.price != null ? parseFloat(w.price) : NaN;
+      const minQ = w && w.minimum_quantity != null ? Number(w.minimum_quantity) : 1;
+      if (Number.isFinite(wp) && wp > 0 && wp < p.price) {
+        if (priceMain) priceMain.textContent = '£' + wp.toFixed(2);
+        if (priceSuffix) {
+          priceSuffix.innerHTML =
+            ' trade / ' +
+            p.unit +
+            ' <span style="display:block;font-size:13px;color:var(--forest-mid);margin-top:4px">Retail £' +
+            p.price.toFixed(2) +
+            (minQ > 1 ? ' · min order ' + minQ : '') +
+            '</span>';
+        }
+      }
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  if (notifyEl && p.availabilityRaw === 'out_of_season' && role === 'customer') {
+    let subscribed = false;
+    try {
+      const notifs = await getMyNotifications();
+      const arr = Array.isArray(notifs) ? notifs : (notifs && notifs.results) || [];
+      const pid = Number(productId);
+      subscribed = arr.some((x) => Number(x.product_id) === pid && !x.notified);
+    } catch (_) {
+      subscribed = false;
+    }
+    notifyEl.innerHTML = subscribed
+      ? `<button type="button" class="btn btn-secondary" style="background:#ecfdf5;border-color:#059669;color:#047857" onclick="handleNotifyToggle(${productId}, false)">Subscribed ✓ — Click to unsubscribe</button>`
+      : `<button type="button" class="btn btn-secondary" style="background:#fffbeb;border-color:#d97706;color:#92400e" onclick="handleNotifyToggle(${productId}, true)">Notify me when back in season</button>`;
+  } else if (notifyEl) {
+    notifyEl.innerHTML = '';
+  }
+
+  let reviewsPayload = { list: [], average: null };
+  try {
+    const raw = await getProductReviews(productId);
+    reviewsPayload = normalizeReviewsPayload(raw);
+  } catch (_) {
+    if (reviewsEl) {
+      reviewsEl.innerHTML =
+        '<p style="color:var(--text-muted);font-size:14px">Reviews could not be loaded (backend may still be deploying Sprint 3).</p>';
+    }
+    return;
+  }
+
+  if (reviewsEl) {
+    reviewsEl.innerHTML = renderReviewsSectionHtml(productId, p, reviewsPayload);
+  }
+
+  if (state.currentUser && state.currentUser.role === 'customer') {
+    if (!Array.isArray(state.customerOrders)) await refreshCustomerOrders();
+    const eligible = findEligibleReviewOrders(productId);
+    const formEl = document.getElementById('product-review-form-slot');
+    if (formEl) {
+      if (eligible.length === 0) {
+        formEl.innerHTML =
+          '<p style="color:var(--text-muted);font-size:14px">Purchase this product to leave a review (after a delivered order).</p>';
+      } else {
+        formEl.innerHTML = buildReviewFormHtml(productId, eligible);
+      }
+    }
+  }
+}
+
+function openDisputeModal(orderId) {
+  const overlay = document.getElementById('dispute-modal-overlay');
+  const label = document.getElementById('dispute-modal-order-label');
+  const hid = document.getElementById('dispute-modal-order-id');
+  const desc = document.getElementById('dispute-description');
+  if (hid) hid.value = String(orderId);
+  if (label) label.textContent = '#' + orderId;
+  if (desc) desc.value = '';
+  if (overlay) overlay.classList.remove('hidden');
+}
+
+function closeDisputeModal() {
+  const overlay = document.getElementById('dispute-modal-overlay');
+  if (overlay) overlay.classList.add('hidden');
+}
+
+function submitRaiseDispute() {
+  const orderId = document.getElementById('dispute-modal-order-id')?.value;
+  const reason = document.getElementById('dispute-reason')?.value;
+  const description = document.getElementById('dispute-description')?.value?.trim();
+  if (!orderId || !description) {
+    showToast('Description is required.', 'error');
+    return;
+  }
+  raiseDispute(orderId, { reason, description })
+    .then(() => {
+      showToast('Dispute raised.', 'success');
+      closeDisputeModal();
+      refreshCustomerOrders();
+    })
+    .catch((err) => showToast(apiErrorMessage(err, 'Could not raise dispute.'), 'error'));
+}
+
+function disputeStatusPillClass(st) {
+  const s = String(st || '').toLowerCase();
+  if (s === 'open') return 'status-pending';
+  if (s === 'under_review') return 'status-processing';
+  if (s === 'resolved') return 'status-confirmed';
+  if (s === 'closed') return 'status-cancelled';
+  return 'status-pending';
+}
+
+function openWholesaleModal(productId, productName) {
+  const o = document.getElementById('wholesale-modal-overlay');
+  const hid = document.getElementById('wholesale-modal-product-id');
+  const title = document.getElementById('wholesale-modal-product-name');
+  const p = (state.producerProducts || []).find((x) => Number(x.id) === Number(productId));
+  if (hid) hid.value = String(productId);
+  if (title) title.textContent = productName || (p && p.name) || 'Product';
+  if (o) o.classList.remove('hidden');
+}
+
+function closeWholesaleModal() {
+  const o = document.getElementById('wholesale-modal-overlay');
+  if (o) o.classList.add('hidden');
+}
+
+function submitWholesaleModal() {
+  const pid = document.getElementById('wholesale-modal-product-id')?.value;
+  const buyer = document.getElementById('wholesale-buyer-type')?.value;
+  const priceVal = document.getElementById('wholesale-price-input')?.value;
+  const minQ = parseInt(document.getElementById('wholesale-min-qty')?.value || '1', 10);
+  const price = priceVal ? parseFloat(priceVal) : NaN;
+  if (!pid || !buyer || !Number.isFinite(price)) {
+    showToast('Enter a valid wholesale price.', 'error');
+    return;
+  }
+  setWholesalePrice(pid, {
+    buyer_type: buyer,
+    price,
+    minimum_quantity: Number.isFinite(minQ) && minQ >= 1 ? minQ : 1,
+    is_active: true,
+  })
+    .then(() => {
+      if (!state.wholesaleLocal[pid]) state.wholesaleLocal[pid] = {};
+      state.wholesaleLocal[pid][buyer] = {
+        price: price.toFixed(2),
+        min: Number.isFinite(minQ) && minQ >= 1 ? minQ : 1,
+      };
+      showToast('Wholesale price saved.', 'success');
+      closeWholesaleModal();
+      renderProducerDash();
+    })
+    .catch((err) => showToast(apiErrorMessage(err, 'Could not save wholesale price.'), 'error'));
+}
+
+async function loadProducerReviewsTab() {
+  const el = document.getElementById('pdash-reviews-content');
+  if (!el) return;
+  el.innerHTML = '<p class="loading-msg">Loading reviews…</p>';
+  try {
+    const prods = state.producerProducts || [];
+    const rows = [];
+    for (const p of prods) {
+      const raw = await getProductReviews(p.id);
+      const { list } = normalizeReviewsPayload(raw);
+      for (const r of list) {
+        if (r.id == null && r.pk == null) continue;
+        rows.push({ product: p, review: r });
+      }
+    }
+    if (!rows.length) {
+      el.innerHTML = '<p style="color:var(--text-muted)">No reviews yet.</p>';
+      return;
+    }
+    el.innerHTML = rows
+      .map(({ product, review }) => {
+        const rid = review.id != null ? review.id : review.pk;
+        const hasResp = !!(review.producer_response && String(review.producer_response).trim());
+        const btn = hasResp
+          ? `<button class="btn btn-secondary btn-sm" onclick="openRespondReview(${product.id},${rid})">Edit response</button>`
+          : `<button class="btn btn-primary btn-sm" onclick="openRespondReview(${product.id},${rid})">Respond</button>`;
+        return `<div style="border-bottom:1px solid rgba(0,0,0,0.08);padding:14px 0">
+        <strong>${escHtml(product.name)}</strong> · ${escHtml(review.customer_name || 'Customer')} · ${'★'.repeat(Math.min(5, review.rating || 0))}
+        <p style="margin:8px 0;font-size:14px">${escHtml(review.comment || '')}</p>
+        ${btn}
+        <div id="respond-slot-${product.id}-${rid}" style="margin-top:8px"></div>
+      </div>`;
+      })
+      .join('');
+  } catch (e) {
+    el.innerHTML = '<p style="color:var(--text-muted)">Could not load reviews.</p>';
+  }
+}
+
+function openRespondReview(productId, reviewId) {
+  const slot = document.getElementById('respond-slot-' + productId + '-' + reviewId);
+  if (!slot) return;
+  slot.innerHTML =
+    `<textarea id="respond-ta-${productId}-${reviewId}" class="form-control" rows="2" placeholder="Your public reply…"></textarea>
+    <button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="submitRespondReview(${productId},${reviewId})">Submit</button>`;
+}
+
+function submitRespondReview(productId, reviewId) {
+  const ta = document.getElementById('respond-ta-' + productId + '-' + reviewId);
+  const text = ta && ta.value ? ta.value.trim() : '';
+  if (!text) {
+    showToast('Enter a response.', 'error');
+    return;
+  }
+  respondToReview(productId, reviewId, text)
+    .then(() => {
+      showToast('Response published.', 'success');
+      loadProducerReviewsTab();
+    })
+    .catch((err) => showToast(apiErrorMessage(err, 'Could not save response.'), 'error'));
+}
+
+async function loadProducerAnalyticsTab() {
+  const el = document.getElementById('pdash-analytics-content');
+  if (!el) return;
+  el.innerHTML = '<p class="loading-msg">Loading…</p>';
+  try {
+    const a = await getProducerAnalytics();
+    const totalRev = a.total_revenue ?? 0;
+    const totalOrders = a.total_orders ?? 0;
+    const aov = a.average_order_value ?? 0;
+    const comm = a.total_commission_paid ?? 0;
+    const weekly = Array.isArray(a.weekly_revenue) ? a.weekly_revenue : [];
+    const top = Array.isArray(a.top_products) ? a.top_products : [];
+    let maxW = 0;
+    weekly.forEach((w) => {
+      const v = Number(w.revenue);
+      if (v > maxW) maxW = v;
+    });
+    const bars = weekly
+      .map((w) => {
+        const rev = Number(w.revenue) || 0;
+        const h = maxW ? Math.round((rev / maxW) * 120) : 0;
+        return `<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1;min-width:0"><div style="height:120px;width:100%;display:flex;align-items:flex-end;justify-content:center"><div style="width:70%;height:${h}px;background:var(--gold);border-radius:6px 6px 0 0" title="£${rev.toFixed(2)}"></div></div><div style="font-size:10px;color:var(--text-muted);text-overflow:ellipsis;overflow:hidden">${escHtml(w.week || '')}</div></div>`;
+      })
+      .join('');
+    el.innerHTML = `
+      <div class="stats-grid">
+        <div class="stat-card"><div class="label">Total revenue</div><div class="value">${formatMoney(totalRev)}</div></div>
+        <div class="stat-card"><div class="label">Orders delivered</div><div class="value">${totalOrders}</div></div>
+        <div class="stat-card"><div class="label">Avg order value</div><div class="value">${formatMoney(aov)}</div></div>
+        <div class="stat-card"><div class="label">Commission paid</div><div class="value">${formatMoney(comm)}</div></div>
+      </div>
+      <h4 style="margin:24px 0 12px">Weekly revenue (8 weeks)</h4>
+      <div style="display:flex;gap:8px;align-items:flex-end;padding:12px 0;overflow-x:auto">${bars || '<p style="color:var(--text-muted)">No chart data.</p>'}</div>
+      <h4 style="margin:24px 0 12px">Top products</h4>
+      <div class="data-table"><table><thead><tr><th>Product</th><th>Units</th><th>Revenue</th></tr></thead><tbody>
+        ${top.length ? top.map((t) => `<tr><td>${escHtml(t.name)}</td><td>${t.units_sold ?? '—'}</td><td>${formatMoney(t.revenue)}</td></tr>`).join('') : '<tr><td colspan="3">No data</td></tr>'}
+      </tbody></table></div>
+    `;
+  } catch (e) {
+    el.innerHTML = '<p style="color:var(--text-muted)">Analytics could not be loaded.</p>';
+  }
+}
+
+async function renderNotificationsContent() {
+  const el = document.getElementById('cdash-notifications-content');
+  if (!el) return;
+  el.innerHTML = '<p class="loading-msg">Loading…</p>';
+  try {
+    const data = await getMyNotifications();
+    const arr = Array.isArray(data) ? data : (data && data.results) || [];
+    if (!arr.length) {
+      el.innerHTML = '<p style="color:var(--text-muted)">No product notifications yet.</p>';
+      return;
+    }
+    el.innerHTML = arr
+      .map((n) => {
+        const name = escHtml(n.product_name || 'Product');
+        const pid = n.product_id;
+        const isWaiting = !n.notified;
+        const banner = isWaiting
+          ? `<span class="status-pill status-pending">Waiting</span>`
+          : `<span class="status-pill status-confirmed">Notified</span>`;
+        const extra =
+          !isWaiting && n.notified_at
+            ? `<div style="margin-top:10px;padding:10px;background:#ecfdf5;border-radius:8px;font-size:14px"><strong>Good news!</strong> ${name} is back in season — <a href="#" onclick="event.preventDefault();navigate('product',${pid});">view product</a></div>`
+            : '';
+        return `<div style="border-bottom:1px solid rgba(0,0,0,0.08);padding:14px 0">${banner} <strong>${name}</strong>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:6px">Subscribed: ${escHtml(n.created_at || '')}</div>
+        ${extra}</div>`;
+      })
+      .join('');
+  } catch (e) {
+    el.innerHTML = '<p style="color:var(--text-muted)">Could not load notifications.</p>';
+  }
+}
+
+function setAdminTab(tab) {
+  state.adminDashTab = tab;
+  document.querySelectorAll('#admin-sidebar li').forEach((li) =>
+    li.classList.toggle('active', li.dataset.tab === tab)
+  );
+  document.querySelectorAll('#admin-dash-content .dashboard-section').forEach((s) =>
+    s.classList.toggle('active', s.id === 'adash-' + tab)
+  );
+  if (tab === 'disputes') refreshAdminDisputesList();
+  if (tab === 'revenue') initAdminRevenueDates();
+}
+
+function initAdminRevenueDates() {
+  const from = document.getElementById('adash-rev-from');
+  const to = document.getElementById('adash-rev-to');
+  if (!from || !to || from.value) return;
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  from.value = start.toISOString().slice(0, 10);
+  to.value = now.toISOString().slice(0, 10);
+}
+
+async function handleLoadPlatformRevenue() {
+  const from = document.getElementById('adash-rev-from')?.value;
+  const to = document.getElementById('adash-rev-to')?.value;
+  try {
+    const r = await getPlatformRevenue({ from, to });
+    const sumEl = document.getElementById('adash-revenue-summary');
+    const tbody = document.getElementById('adash-revenue-tbody');
+    if (sumEl) {
+      sumEl.innerHTML = `
+        <div class="stats-grid">
+          <div class="stat-card"><div class="label">Platform revenue</div><div class="value">${formatMoney(r.total_platform_revenue ?? r.total_revenue ?? 0)}</div></div>
+          <div class="stat-card"><div class="label">Commission</div><div class="value">${formatMoney(r.total_commission_collected ?? r.total_commission ?? 0)}</div></div>
+          <div class="stat-card"><div class="label">Producer payouts</div><div class="value">${formatMoney(r.total_producer_payouts ?? 0)}</div></div>
+          <div class="stat-card"><div class="label">Active producers</div><div class="value">${r.active_producers ?? '—'}</div></div>
+          <div class="stat-card"><div class="label">Active customers</div><div class="value">${r.active_customers ?? '—'}</div></div>
+        </div>`;
+    }
+    const rows = Array.isArray(r.producers) ? r.producers : r.breakdown || r.rows || [];
+    if (tbody) {
+      tbody.innerHTML = rows.length
+        ? rows
+            .map((row) => {
+              const name = row.producer_name ?? row.name ?? row.business_name ?? '—';
+              const sales = row.total_sales ?? row.sales ?? row.revenue ?? 0;
+              const com = row.commission ?? 0;
+              const pay = row.payout ?? row.producer_payout ?? 0;
+              return `<tr><td>${escHtml(name)}</td><td>${formatMoney(sales)}</td><td>${formatMoney(com)}</td><td>${formatMoney(pay)}</td></tr>`;
+            })
+            .join('')
+        : '<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--text-muted)">No rows in this range.</td></tr>';
+    }
+  } catch (e) {
+    showToast(apiErrorMessage(e, 'Could not load revenue report.'), 'error');
+  }
+}
+
+async function handleExportRevenueCSV() {
+  const from = document.getElementById('adash-rev-from')?.value;
+  const to = document.getElementById('adash-rev-to')?.value;
+  try {
+    await exportRevenueCSV({ from, to });
+    showToast('CSV export started.', 'success');
+  } catch (e) {
+    showToast(apiErrorMessage(e, 'Export failed.'), 'error');
+  }
+}
+
+async function refreshAdminDisputesList() {
+  const el = document.getElementById('adash-disputes-list');
+  if (!el) return;
+  el.innerHTML = '<p class="loading-msg">Loading…</p>';
+  try {
+    const data = await listAdminDisputes();
+    const rows = Array.isArray(data) ? data : (data && (data.results || data.disputes)) || [];
+    if (!rows.length) {
+      el.innerHTML =
+        '<p style="color:var(--text-muted);font-size:14px">No disputes returned. Use resolve by ID if your API has no list endpoint.</p>';
+      return;
+    }
+    el.innerHTML =
+      '<table><thead><tr><th>ID</th><th>Status</th><th>Reason</th><th>Created</th></tr></thead><tbody>' +
+      rows
+        .map(
+          (d) =>
+            `<tr><td>${d.id}</td><td>${escHtml(d.status)}</td><td>${escHtml(d.reason)}</td><td>${escHtml(d.created_at || '')}</td></tr>`
+        )
+        .join('') +
+      '</tbody></table>';
+  } catch (e) {
+    el.innerHTML =
+      '<p style="color:var(--text-muted)">List endpoint unavailable. Use resolve by ID below.</p>';
+  }
+}
+
+function handleAdminResolveDispute() {
+  const id = document.getElementById('adash-resolve-dispute-id')?.value?.trim();
+  const status = document.getElementById('adash-resolve-status')?.value;
+  const note = document.getElementById('adash-resolve-note')?.value?.trim();
+  if (!id || !note) {
+    showToast('Fill dispute ID and resolution note.', 'error');
+    return;
+  }
+  resolveDispute(id, { status, resolution_note: note })
+    .then(() => {
+      showToast('Dispute updated.', 'success');
+      refreshAdminDisputesList();
+    })
+    .catch((err) => showToast(apiErrorMessage(err, 'Could not resolve.'), 'error'));
+}
+
+function renderWholesaleBadgesHtml(productId) {
+  const w = state.wholesaleLocal[productId];
+  if (!w) return '';
+  const parts = [];
+  if (w.restaurant)
+    parts.push(
+      `<span class="badge" style="background:#ecfdf5;color:#047857;font-size:11px;margin-right:6px">Restaurant: £${w.restaurant.price} (min ${w.restaurant.min})</span>`
+    );
+  if (w.community_group)
+    parts.push(
+      `<span class="badge" style="background:#ecfdf5;color:#047857;font-size:11px">Community: £${w.community_group.price} (min ${w.community_group.min})</span>`
+    );
+  return parts.join(' ');
 }
 
 // ---- PRODUCT DETAIL ----
@@ -328,6 +956,13 @@ function renderProductDetail(productId) {
       } catch (err) {
         contentEl.innerHTML = `<div class="no-results"><h3>Product not found</h3><p>${apiErrorMessage(err, 'Please try again.')}</p><button class="btn btn-primary" onclick="navigate('browse')">Back to Marketplace</button></div>`;
         return;
+      }
+    } else if (!p.availabilityRaw) {
+      try {
+        const api = await getProduct(productId);
+        p = apiProductToUI(api);
+      } catch (_) {
+        /* keep cached p */
       }
     }
     state.currentProduct = p;
@@ -362,11 +997,12 @@ function renderProductDetail(productId) {
             <span>Bristol, UK · Within 20 miles</span>
           </div>
         </div>
-        <div class="price-availability">
-          <span class="big-price">£${p.price.toFixed(2)}</span>
-          <span style="font-size:16px;color:var(--text-muted)">/ ${p.unit}</span>
+        <div class="price-availability" id="product-detail-price-block">
+          <span class="big-price" id="product-detail-price-main">£${p.price.toFixed(2)}</span>
+          <span style="font-size:16px;color:var(--text-muted)" id="product-detail-price-suffix">/ ${p.unit}</span>
           <span class="avail-badge available">${p.availability}</span>
         </div>
+        <div id="product-detail-notify-wrap" style="margin-top:12px"></div>
         <div class="detail-block">
           <h4>About this product</h4>
           <p style="font-size:15px;color:var(--text-body);line-height:1.8">${p.description}</p>
@@ -387,8 +1023,10 @@ function renderProductDetail(productId) {
           <button class="btn btn-primary" style="flex:1" onclick="addDetailToCart()">Add to Cart</button>
         </div>
       </div>
-    </div>`;
+    </div>
+    <div id="product-reviews-root" style="margin-top:40px;max-width:900px"></div>`;
     contentEl.innerHTML = html;
+    hydrateProductDetailSprint3(productId, p);
   })();
 }
 
@@ -480,6 +1118,8 @@ function closeCheckoutModal() {
   if (errorEl) errorEl.textContent = '';
   const dateErrEl = document.getElementById('checkout-delivery-date-err');
   if (dateErrEl) dateErrEl.textContent = '';
+  const specEl = document.getElementById('checkout-special-instructions');
+  if (specEl) specEl.value = '';
 }
 
 function openCheckoutModal() {
@@ -606,10 +1246,13 @@ async function handleStripePay() {
       });
     }
 
+    const specInput = document.getElementById('checkout-special-instructions');
+    const specialInstructions = specInput && specInput.value ? String(specInput.value).trim() : '';
+
     const orderData = {
       delivery_address: deliveryAddress,
       delivery_postcode: deliveryPostcode,
-      special_instructions: '',
+      special_instructions: specialInstructions,
       producer_groups: Object.values(groupsByProducerId),
     };
 
@@ -927,7 +1570,18 @@ function renderProducerDash() {
   } else if (Array.isArray(state.producerOrders) && state.producerOrders.length === 0) {
     setOrdersBody(emptyRow);
   } else {
-    const rows = (state.producerOrders || []).map(o => `
+    const escHtml = (s) => String(s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+
+    const rows = (state.producerOrders || []).map((o) => {
+      const specRaw = o && o.special_instructions != null ? String(o.special_instructions).trim() : '';
+      const notesRow = specRaw
+        ? `<tr class="pdash-order-spec"><td colspan="7" style="font-size:13px;padding-top:0;padding-bottom:14px;color:var(--text-muted)"><strong style="color:var(--text)">Delivery instructions:</strong> ${escHtml(specRaw)}</td></tr>`
+        : '';
+      return `
       <tr>
         <td>${toOrderId(o)}</td>
         <td>${toCustomerName(o)}</td>
@@ -939,8 +1593,8 @@ function renderProducerDash() {
           <span class="status-pill status-${toStatus(o).toLowerCase()}">${toStatus(o)}</span>
           ${statusActionHTML(o)}
         </td>
-      </tr>
-    `).join('');
+      </tr>${notesRow}`;
+    }).join('');
     setOrdersBody(rows);
   }
 
@@ -964,12 +1618,17 @@ function renderProducerDash() {
     const myProducts = state.producerProducts.length ? state.producerProducts : [];
     prodTable.innerHTML = myProducts.length ? myProducts.map(p => `
       <tr>
-        <td><img src="${p.img}" style="width:36px;height:36px;border-radius:6px;object-fit:cover;margin-right:8px;vertical-align:middle" />${p.name}</td>
+        <td><img src="${p.img}" style="width:36px;height:36px;border-radius:6px;object-fit:cover;margin-right:8px;vertical-align:middle" />${p.name}
+          <div style="margin-top:6px">${renderWholesaleBadgesHtml(p.id)}</div>
+        </td>
         <td>${p.category_name}</td>
         <td style="font-weight:700">£${p.price.toFixed(2)}</td>
         <td>${p.stock} ${p.unit}s</td>
         <td><span class="status-pill status-confirmed">${p.availability}</span></td>
-        <td><button class="btn btn-secondary btn-sm" onclick="handleEditProduct(${p.id})">Edit</button></td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-secondary btn-sm" onclick="handleEditProduct(${p.id})">Edit</button>
+          <button class="btn btn-primary btn-sm" style="margin-left:6px" onclick="openWholesaleModal(${p.id})">Wholesale</button>
+        </td>
       </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px">Your products will appear here. Add products via the form below.</td></tr>';
   }
 
@@ -1293,7 +1952,19 @@ async function refreshCustomerOrders() {
   try {
     const data = await getCustomerOrderHistory();
     const orders = Array.isArray(data) ? data : (data && (data.orders || data.results)) ? (data.orders || data.results) : [];
-    state.customerOrders = Array.isArray(orders) ? orders : [];
+    const base = Array.isArray(orders) ? orders : [];
+    state.customerOrders = await Promise.all(
+      base.map(async (o) => {
+        if (String(o.status || '').toLowerCase() !== 'delivered') return { ...o, _dispute: null };
+        try {
+          const d = await getDisputeStatus(o.id);
+          return { ...o, _dispute: d };
+        } catch (err) {
+          if (err.status === 404) return { ...o, _dispute: null };
+          return { ...o, _dispute: null };
+        }
+      })
+    );
   } catch (err) {
     state.customerOrders = [];
     showToast(apiErrorMessage(err, 'Could not load your order history.'), 'error');
@@ -1308,6 +1979,8 @@ function setProducerTab(tab) {
   renderProducerDash();
   if (tab === 'orders' || tab === 'overview') refreshProducerOrders();
   if (tab === 'payments') refreshProducerSettlements();
+  if (tab === 'reviews') loadProducerReviewsTab();
+  if (tab === 'analytics') loadProducerAnalyticsTab();
 }
 
 // ---- CUSTOMER DASHBOARD ----
@@ -1378,16 +2051,34 @@ function renderCustomerDash() {
   const toTotal = (o) => o.total_amount ?? o.total ?? 0;
   const toStatus = (o) => (o.status || 'pending');
 
-  ordTable.innerHTML = state.customerOrders.map(o => `
+  ordTable.innerHTML = state.customerOrders
+    .map((o) => {
+      const disp = o._dispute;
+      const st = disp && disp.status ? String(disp.status) : '';
+      const dispBadge = st
+        ? `<span class="status-pill ${disputeStatusPillClass(st)}" style="margin-left:6px;font-size:11px">${st.replace(/_/g, ' ')}</span>`
+        : '';
+      const delivered = String(toStatus(o)).toLowerCase() === 'delivered';
+      const hasDispute = !!(disp && disp.status);
+      const raiseBtn =
+        delivered && !hasDispute
+          ? `<button type="button" class="btn btn-secondary btn-sm" style="margin-top:6px" onclick="openDisputeModal(${o.id})">Raise dispute</button>`
+          : '';
+      return `
     <tr>
       <td style="font-weight:600">${toOrderId(o)}</td>
       <td>${toDate(o)}</td>
       <td style="font-size:12px">${toProducers(o)}</td>
       <td style="font-size:12px">${toItemsCount(o)}</td>
       <td style="font-weight:700">${formatMoney(toTotal(o))}</td>
-      <td><span class="status-pill status-${toStatus(o).toLowerCase()}">${toStatus(o)}</span></td>
-      <td><button class="btn btn-secondary btn-sm" onclick="handleReorder(${o.id})">Reorder</button></td>
-    </tr>`).join('');
+      <td><span class="status-pill status-${toStatus(o).toLowerCase()}">${toStatus(o)}</span>${dispBadge}</td>
+      <td style="display:flex;flex-direction:column;align-items:flex-start;gap:6px">
+        <button class="btn btn-secondary btn-sm" onclick="handleReorder(${o.id})">Reorder</button>
+        ${raiseBtn}
+      </td>
+    </tr>`;
+    })
+    .join('');
 }
 
 function handleUpdateProfile() {
@@ -1412,12 +2103,14 @@ function setCustomerTab(tab) {
   state.customerDashTab = tab;
   renderCustomerDash();
   if (tab === 'orders') refreshCustomerOrders();
+  if (tab === 'notifications') renderNotificationsContent();
 }
 
-// ---- Admin Commission Report (TC-025) ----
+// ---- Admin Commission Report (TC-025) + Sprint 3 revenue/disputes ----
 function renderAdminDash() {
   const nameEl = document.getElementById('adash-user-name');
   if (nameEl && state.currentUser) nameEl.textContent = state.currentUser.name;
+  setAdminTab(state.adminDashTab || 'commission');
 }
 
 async function handleLoadCommissionReport() {
