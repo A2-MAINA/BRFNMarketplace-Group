@@ -7,11 +7,15 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from .serializers import (
     ProducerRegistrationSerializer,
     CustomerRegistrationSerializer,
+    RestaurantRegistrationSerializer,
+    CommunityGroupRegistrationSerializer,
     LoginSerializer,
     UserSerializer,
     UserProfileSerializer,
-    CustomerProfileUpdateSerializer
+    CustomerProfileUpdateSerializer,
 )
+from products.models import Notification
+from products.serializers import NotificationSerializer
 from .authentication import CsrfExemptSessionAuthentication
 
 
@@ -87,3 +91,49 @@ class CSRFView(APIView):
 
     def get(self, request):
         return Response({"detail": "CSRF cookie set"})
+
+# ============================
+# Restaurant Registration (TC-020)
+# ============================
+
+class RestaurantRegistrationView(APIView):
+    authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = RestaurantRegistrationSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ============================
+# Community Group Registration (TC-019)
+# ============================
+
+class CommunityGroupRegistrationView(APIView):
+    authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = CommunityGroupRegistrationSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ============================
+# Customer Notifications (TC-016)
+# ============================
+
+class CustomerNotificationsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role not in ['customer', 'restaurant', 'community_group']:
+            return Response({'error': 'Only customers can view notifications.'}, status=403)
+        notifications = Notification.objects.filter(customer=request.user).order_by('-created_at')
+        serializer = NotificationSerializer(notifications, many=True)
+        return Response(serializer.data)

@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 import datetime
 
-from .models import Order, OrderProducerGroup, OrderStatusHistory, Payment
+from .models import Order, OrderProducerGroup, OrderStatusHistory, Payment, Dispute
 from .serializers import (
     OrderSerializer,
     OrderCreateSerializer,
@@ -13,6 +13,9 @@ from .serializers import (
     SettlementSerializer,
     SettlementOrderSerializer,
     PaymentSerializer,
+    DisputeCreateSerializer,
+    DisputeSerializer,
+    DisputeResolveSerializer,
 )
 from products.models import Product
 from products.serializers import ProductSerializer
@@ -385,3 +388,91 @@ class ConfirmPaymentView(APIView):
             return Response({'error': 'Payment record not found.'}, status=404)
 
         return Response(OrderSerializer(order).data)
+
+
+# ============================
+# Dispute — Raise & View (TC-014)
+# ============================
+
+class OrderDisputeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        """Customer views dispute status on their order."""
+        try:
+            order = Order.objects.get(pk=pk, customer=request.user)
+        except Order.DoesNotExist:
+            return Response({'error': 'Order not found.'}, status=404)
+
+        try:
+            dispute = order.disputes.latest('created_at')
+            return Response(DisputeSerializer(dispute).data)
+        except Dispute.DoesNotExist:
+            return Response({'error': 'No dispute found for this order.'}, status=404)
+
+    def post(self, request, pk):
+        """Customer raises a dispute on an order."""
+        if request.user.role not in ['customer', 'restaurant', 'community_group']:
+            return Response({'error': 'Only customers can raise disputes.'}, status=403)
+
+        try:
+            order = Order.objects.get(pk=pk, customer=request.user)
+        except Order.DoesNotExist:
+            return Response({'error': 'Order not found.'}, status=404)
+
+        serializer = DisputeCreateSerializer(
+            data=request.data,
+            context={'order': order, 'request': request}
+        )
+        if serializer.is_valid():
+            dispute = serializer.save()
+            return Response(DisputeSerializer(dispute).data, status=201)
+        return Response(serializer.errors, status=400)
+
+
+# ============================
+# Admin — Resolve Dispute (TC-014)
+# ============================
+
+class AdminDisputeResolveView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk):
+        """Admin resolves or closes a dispute."""
+        if request.user.role != 'admin':
+            return Response({'error': 'Admin access only.'}, status=403)
+
+        try:
+            dispute = Dispute.objects.get(pk=pk)
+        except Dispute.DoesNotExist:
+            return Response({'error': 'Dispute not found.'}, status=404)
+
+        serializer = DisputeResolveSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        if serializer.is_valid():
+            serializer.update(dispute, serializer.validated_data)
+            return Response(DisputeSerializer(dispute).data)
+        return Response(serializer.errors, status=400)
+
+
+# ============================
+# Admin — List All Disputes (TC-014)
+# ============================
+
+class AdminDisputeListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """Admin views all disputes with optional status filter."""
+        if request.user.role != 'admin':
+            return Response({'error': 'Admin access only.'}, status=403)
+
+        status_filter = request.query_params.get('status')
+        disputes = Dispute.objects.all().order_by('-created_at')
+
+        if status_filter:
+            disputes = disputes.filter(status=status_filter)
+
+        return Response(DisputeSerializer(disputes, many=True).data)

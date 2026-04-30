@@ -8,6 +8,9 @@ from .views import (
     AdminCommissionReportView,
     CreatePaymentIntentView,
     ConfirmPaymentView,
+    OrderDisputeView,
+    AdminDisputeResolveView,
+    AdminDisputeListView,
 )
 
 urlpatterns = [
@@ -27,4 +30,9 @@ urlpatterns = [
     # Payments — TC-007, TC-008
     path('payments/create-intent/', CreatePaymentIntentView.as_view(), name='payment-create-intent'),
     path('payments/confirm/', ConfirmPaymentView.as_view(), name='payment-confirm'),
+
+    # Sprint 3 — Disputes (TC-014)
+    path('<int:pk>/dispute/', OrderDisputeView.as_view(), name='order-dispute'),
+    path('admin/disputes/', AdminDisputeListView.as_view(), name='admin-dispute-list'),
+    path('admin/disputes/<int:pk>/resolve/', AdminDisputeResolveView.as_view(), name='admin-dispute-resolve'),
 ]
