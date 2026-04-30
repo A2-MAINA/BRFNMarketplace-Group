@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model, authenticate
 from django.db import transaction
 from django.utils import timezone
-from .models import ProducerProfile, CustomerProfile
+from .models import ProducerProfile, CustomerProfile, RestaurantProfile, CommunityGroupProfile
 
 User = get_user_model()
 
@@ -215,13 +215,46 @@ class CustomerProfileSerializer(serializers.ModelSerializer):
         fields = ['full_name', 'phone_number', 'delivery_address', 'postcode', 'terms_accepted', 'terms_accepted_at', 'created_at']
         read_only_fields = ['terms_accepted', 'terms_accepted_at', 'created_at']
 
+
+
+# ============================
+# Restaurant Profile Serializer
+# ============================
+
+class RestaurantProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RestaurantProfile
+        fields = [
+            'business_name', 'contact_name', 'phone_number',
+            'delivery_address', 'postcode', 'cuisine_type', 'created_at'
+        ]
+
+
+# ============================
+# Community Group Profile Serializer
+# ============================
+
+class CommunityGroupProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CommunityGroupProfile
+        fields = [
+            'organisation_name', 'contact_name', 'phone_number',
+            'delivery_address', 'postcode', 'group_type', 'created_at'
+        ]
+
+
 class UserProfileSerializer(serializers.ModelSerializer):
     producer_profile = ProducerProfileSerializer(read_only=True)
     customer_profile = CustomerProfileSerializer(read_only=True)
+    restaurant_profile = RestaurantProfileSerializer(read_only=True)
+    community_group_profile = CommunityGroupProfileSerializer(read_only=True)
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'role', 'producer_profile', 'customer_profile', 'date_joined']
+        fields = [
+            'id', 'email', 'role', 'producer_profile', 'customer_profile',
+            'restaurant_profile', 'community_group_profile', 'date_joined'
+        ]
 
 
 class CustomerProfileUpdateSerializer(serializers.Serializer):
@@ -235,3 +268,133 @@ class CustomerProfileUpdateSerializer(serializers.Serializer):
             setattr(profile, field, value)
         profile.save()
         return profile
+
+
+# ============================
+# Restaurant Registration (TC-020)
+# ============================
+
+class RestaurantRegistrationSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, min_length=8)
+    password_confirm = serializers.CharField(write_only=True)
+
+    # RestaurantProfile fields
+    business_name = serializers.CharField(max_length=255)
+    contact_name = serializers.CharField(max_length=255)
+    phone_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    delivery_address = serializers.CharField()
+    postcode = serializers.CharField(max_length=10)
+    cuisine_type = serializers.CharField(max_length=100, required=False, allow_blank=True)
+
+    class Meta:
+        model = User
+        fields = [
+            'email', 'password', 'password_confirm',
+            'business_name', 'contact_name', 'phone_number',
+            'delivery_address', 'postcode', 'cuisine_type',
+        ]
+
+    def validate(self, data):
+        if data['password'] != data['password_confirm']:
+            raise serializers.ValidationError(
+                {"password_confirm": "Passwords do not match."}
+            )
+        return data
+
+    @transaction.atomic
+    def create(self, validated_data):
+        password = validated_data.pop('password')
+        validated_data.pop('password_confirm')
+
+        business_name = validated_data.pop('business_name')
+        contact_name = validated_data.pop('contact_name')
+        phone_number = validated_data.pop('phone_number', '')
+        delivery_address = validated_data.pop('delivery_address')
+        postcode = validated_data.pop('postcode')
+        cuisine_type = validated_data.pop('cuisine_type', '')
+
+        email = validated_data['email']
+
+        user = User.objects.create_user(
+            email=email,
+            username=email,
+            password=password,
+            role='restaurant'
+        )
+
+        RestaurantProfile.objects.create(
+            user=user,
+            business_name=business_name,
+            contact_name=contact_name,
+            phone_number=phone_number,
+            delivery_address=delivery_address,
+            postcode=postcode,
+            cuisine_type=cuisine_type,
+        )
+
+        return user
+
+
+# ============================
+# Community Group Registration (TC-019)
+# ============================
+
+class CommunityGroupRegistrationSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, min_length=8)
+    password_confirm = serializers.CharField(write_only=True)
+
+    # CommunityGroupProfile fields
+    organisation_name = serializers.CharField(max_length=255)
+    contact_name = serializers.CharField(max_length=255)
+    phone_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    delivery_address = serializers.CharField()
+    postcode = serializers.CharField(max_length=10)
+    group_type = serializers.CharField(max_length=100, required=False, allow_blank=True)
+
+    class Meta:
+        model = User
+        fields = [
+            'email', 'password', 'password_confirm',
+            'organisation_name', 'contact_name', 'phone_number',
+            'delivery_address', 'postcode', 'group_type',
+        ]
+
+    def validate(self, data):
+        if data['password'] != data['password_confirm']:
+            raise serializers.ValidationError(
+                {"password_confirm": "Passwords do not match."}
+            )
+        return data
+
+    @transaction.atomic
+    def create(self, validated_data):
+        password = validated_data.pop('password')
+        validated_data.pop('password_confirm')
+
+        organisation_name = validated_data.pop('organisation_name')
+        contact_name = validated_data.pop('contact_name')
+        phone_number = validated_data.pop('phone_number', '')
+        delivery_address = validated_data.pop('delivery_address')
+        postcode = validated_data.pop('postcode')
+        group_type = validated_data.pop('group_type', '')
+
+        email = validated_data['email']
+
+        user = User.objects.create_user(
+            email=email,
+            username=email,
+            password=password,
+            role='community_group'
+        )
+
+        CommunityGroupProfile.objects.create(
+            user=user,
+            organisation_name=organisation_name,
+            contact_name=contact_name,
+            phone_number=phone_number,
+            delivery_address=delivery_address,
+            postcode=postcode,
+            group_type=group_type,
+        )
+
+        return user

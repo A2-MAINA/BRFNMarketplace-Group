@@ -3,7 +3,7 @@ from django.db import transaction
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 import datetime
-from .models import Order, OrderProducerGroup, OrderItem, OrderStatusHistory, Payment
+from .models import Order, OrderProducerGroup, OrderItem, OrderStatusHistory, Payment, Dispute
 from products.models import Product
 
 User = get_user_model()
@@ -454,3 +454,147 @@ class PaymentSerializer(serializers.ModelSerializer):
             'paid_at', 'processed_at', 'created_at',
         ]
         read_only_fields = fields
+
+
+# ============================
+# Dispute Create Serializer (POST) — TC-014
+# ============================
+
+class DisputeCreateSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Dispute
+        fields = ['reason', 'description']
+
+    def validate(self, data):
+        order = self.context['order']
+        request = self.context['request']
+
+        # Customer must own the order
+        if order.customer != request.user:
+            raise serializers.ValidationError(
+                'You can only raise a dispute on your own orders.'
+            )
+
+        # Cannot dispute a pending or cancelled order
+        if order.status in ['pending', 'cancelled']:
+            raise serializers.ValidationError(
+                'You cannot raise a dispute on a pending or cancelled order.'
+            )
+
+        # Only one open dispute per order at a time
+        if Dispute.objects.filter(
+            order=order,
+            status__in=['open', 'under_review']
+        ).exists():
+            raise serializers.ValidationError(
+                'There is already an open dispute for this order.'
+            )
+
+        return data
+
+    def create(self, validated_data):
+        order = self.context['order']
+        request = self.context['request']
+        return Dispute.objects.create(
+            order=order,
+            raised_by=request.user,
+            **validated_data
+        )
+
+
+# ============================
+# Dispute Read Serializer (GET) — TC-014
+# ============================
+
+class DisputeSerializer(serializers.ModelSerializer):
+    raised_by_email = serializers.EmailField(source='raised_by.email', read_only=True)
+    resolved_by_email = serializers.SerializerMethodField()
+    order_invoice = serializers.CharField(source='order.invoice_number', read_only=True)
+
+    class Meta:
+        model = Dispute
+        fields = [
+            'id',
+            'order',
+            'order_invoice',
+            'raised_by',
+            'raised_by_email',
+            'reason',
+            'description',
+            'status',
+            'resolution_note',
+            'resolved_by',
+            'resolved_by_email',
+            'created_at',
+            'resolved_at',
+        ]
+        read_only_fields = fields
+
+    def get_resolved_by_email(self, obj):
+        if obj.resolved_by:
+            return obj.resolved_by.email
+        return None
+
+
+# ============================
+# Dispute Resolve Serializer (PATCH) — TC-014
+# ============================
+
+class DisputeResolveSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=['resolved', 'closed', 'under_review'])
+    resolution_note = serializers.CharField(required=False, allow_blank=True)
+
+    def update(self, dispute, validated_data):
+        from django.utils import timezone
+        dispute.status = validated_data['status']
+        dispute.resolution_note = validated_data.get('resolution_note', '')
+        dispute.resolved_by = self.context['request'].user
+
+        # Set resolved_at when dispute is resolved or closed
+        if validated_data['status'] in ['resolved', 'closed']:
+            dispute.resolved_at = timezone.now()
+
+        dispute.save(update_fields=[
+            'status', 'resolution_note', 'resolved_by', 'resolved_at'
+        ])
+        return dispute
+
+
+# ============================
+# Analytics Serializer — TC-017
+# ============================
+
+class ProducerAnalyticsSerializer(serializers.Serializer):
+    """
+    Read-only serializer for producer analytics dashboard.
+    Data aggregated from delivered OrderProducerGroups.
+    No model — built from queryset aggregation in the view.
+    """
+    total_revenue = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_orders = serializers.IntegerField()
+    average_order_value = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_commission_paid = serializers.DecimalField(max_digits=10, decimal_places=2)
+    top_products = serializers.ListField(child=serializers.DictField())
+    weekly_revenue = serializers.ListField(child=serializers.DictField())
+
+
+# ============================
+# Platform Revenue Serializer — TC-018
+# ============================
+
+class PlatformRevenueSerializer(serializers.Serializer):
+    """
+    Read-only serializer for admin platform revenue report.
+    Data aggregated from all delivered OrderProducerGroups.
+    No model — built from queryset aggregation in the view.
+    """
+    total_revenue = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_commission = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_producer_payouts = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_orders = serializers.IntegerField()
+    active_producers = serializers.IntegerField()
+    active_customers = serializers.IntegerField()
+    revenue_by_producer = serializers.ListField(child=serializers.DictField())
+    from_date = serializers.DateField(required=False, allow_null=True)
+    to_date = serializers.DateField(required=False, allow_null=True)

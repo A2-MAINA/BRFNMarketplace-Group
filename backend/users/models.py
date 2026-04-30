@@ -142,3 +142,58 @@ class CustomerProfile(models.Model):
     # What shows in admin panel — e.g. "Robert Johnson"
     def __str__(self):
         return self.full_name
+
+class RestaurantProfile(models.Model):
+    """
+    Stores business information for restaurant accounts.
+    Created when a restaurant registers.
+    Covers TC-020: restaurant wholesale pricing.
+    """
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='restaurant_profile'
+    )
+    # Restaurant or pub name
+    business_name = models.CharField(max_length=255)
+    # Manager or owner name
+    contact_name = models.CharField(max_length=255)
+    phone_number = models.CharField(max_length=20, blank=True, default='')
+    # Delivery address for food orders
+    delivery_address = models.TextField()
+    postcode = models.CharField(max_length=10)
+    # Optional — e.g. Italian, Farm-to-table
+    cuisine_type = models.CharField(max_length=100, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.business_name
+
+
+class CommunityGroupProfile(models.Model):
+    """
+    Stores organisation information for community group accounts.
+    Created when a community group registers.
+    Covers TC-019: community group bulk ordering.
+    """
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='community_group_profile'
+    )
+    # Name of the group or organisation
+    organisation_name = models.CharField(max_length=255)
+    # Name of the coordinator
+    contact_name = models.CharField(max_length=255)
+    phone_number = models.CharField(max_length=20, blank=True, default='')
+    # Delivery address for bulk orders
+    delivery_address = models.TextField()
+    postcode = models.CharField(max_length=10)
+    # e.g. Food Bank, School, Charity, Community Kitchen
+    group_type = models.CharField(max_length=100, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.organisation_name
