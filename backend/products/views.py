@@ -276,7 +276,7 @@ class ProducerAnalyticsView(APIView):
 
         from decimal import Decimal
         from orders.models import OrderProducerGroup, OrderItem
-        from django.db.models import Sum, Count
+        from django.db.models import Sum, Count, F
         import datetime
 
         # All delivered groups for this producer
@@ -348,7 +348,7 @@ class PlatformRevenueView(APIView):
 
         from decimal import Decimal
         from orders.models import OrderProducerGroup
-        from django.db.models import Sum
+        from django.db.models import Sum, Count
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
