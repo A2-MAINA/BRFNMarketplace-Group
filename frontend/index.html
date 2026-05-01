@@ -306,6 +306,14 @@
           onclick="document.getElementById('login-email').value='producer@example.com';document.getElementById('login-password').value='Password1!'">
           Producer Demo
         </button>
+        <button class="btn btn-secondary btn-sm btn-full"
+          onclick="document.getElementById('login-email').value='restaurant@example.com';document.getElementById('login-password').value='Password1!'">
+          Restaurant Demo
+        </button>
+        <button class="btn btn-secondary btn-sm btn-full"
+          onclick="document.getElementById('login-email').value='community@example.com';document.getElementById('login-password').value='Password1!'">
+          Community Group Demo
+        </button>
       </div>
       <div class="auth-switch">Don't have an account? <a href="javascript:void(0)" onclick="typeof navigate==='function'&&navigate('register');return false">Sign up here</a></div>
     </div>
@@ -327,12 +335,17 @@
         <h2>Create your account</h2>
         <p>Join the BRFN Marketplace today</p>
       </div>
-      <div class="role-tabs">
-        <button class="role-tab" data-role="customer" onclick="setRegisterRole('customer')">Customer</button>
-        <button class="role-tab active" data-role="producer" onclick="setRegisterRole('producer')">Producer</button>
+      <div class="form-group" style="margin-bottom:16px">
+        <label for="reg-role-select" style="font-weight:600">I am registering as a <span class="req">*</span></label>
+        <select id="reg-role-select" class="form-control" onchange="setRegisterRole(this.value)">
+          <option value="customer" selected>Individual Customer</option>
+          <option value="producer">Producer / Farm</option>
+          <option value="restaurant">Restaurant / Food Business</option>
+          <option value="community_group">Community Group / Charity</option>
+        </select>
       </div>
       <form onsubmit="handleRegister(event)" novalidate>
-        <div id="producer-fields">
+        <div id="producer-fields" class="hidden">
           <div class="form-group">
             <label for="reg-business">Business Name <span class="req">*</span></label>
             <input type="text" class="form-control" id="reg-business" placeholder="e.g. Bristol Valley Farm" />
@@ -384,7 +397,7 @@
           </div>
           <div class="error-msg" id="reg-confirm-err"></div>
         </div>
-        <div id="customer-fields" class="hidden">
+        <div id="customer-fields">
           <div class="form-row">
             <div class="form-group">
               <label for="reg-first-name">First Name <span class="req">*</span></label>
@@ -400,6 +413,58 @@
           <div class="form-group">
             <label for="reg-delivery">Delivery Address</label>
             <input type="text" class="form-control" id="reg-delivery" placeholder="45 Park Street, Bristol, BS1 5JG" />
+          </div>
+        </div>
+        <div id="restaurant-fields" class="hidden">
+          <div class="form-group">
+            <label for="reg-restaurant-name">Restaurant / Business Name <span class="req">*</span></label>
+            <input type="text" class="form-control" id="reg-restaurant-name" placeholder="e.g. The Green Plate Restaurant" />
+          </div>
+          <div class="form-group">
+            <label for="reg-restaurant-contact">Contact Name <span class="req">*</span></label>
+            <input type="text" class="form-control" id="reg-restaurant-contact" placeholder="e.g. Maria Fernandez" />
+          </div>
+          <div class="form-group">
+            <label for="reg-restaurant-phone">Phone Number</label>
+            <input type="tel" class="form-control" id="reg-restaurant-phone" placeholder="e.g. 01179 456789" />
+          </div>
+          <div class="form-group">
+            <label for="reg-restaurant-address">Delivery Address <span class="req">*</span></label>
+            <input type="text" class="form-control" id="reg-restaurant-address" placeholder="e.g. 12 Clifton Road, Bristol" />
+          </div>
+          <div class="form-group">
+            <label for="reg-restaurant-postcode">Postcode <span class="req">*</span></label>
+            <input type="text" class="form-control" id="reg-restaurant-postcode" placeholder="e.g. BS8 1AB" />
+          </div>
+          <div class="form-group">
+            <label for="reg-restaurant-cuisine">Cuisine Type <span style="color:var(--text-muted);font-weight:400">(optional)</span></label>
+            <input type="text" class="form-control" id="reg-restaurant-cuisine" placeholder="e.g. Farm-to-table, Italian" />
+          </div>
+        </div>
+        <div id="community-group-fields" class="hidden">
+          <div class="form-group">
+            <label for="reg-community-name">Organisation Name <span class="req">*</span></label>
+            <input type="text" class="form-control" id="reg-community-name" placeholder="e.g. St. Pauls Community Kitchen" />
+          </div>
+          <div class="form-group">
+            <label for="reg-community-contact">Contact Name <span class="req">*</span></label>
+            <input type="text" class="form-control" id="reg-community-contact" placeholder="e.g. David Okafor" />
+          </div>
+          <div class="form-group">
+            <label for="reg-community-phone">Phone Number</label>
+            <input type="tel" class="form-control" id="reg-community-phone" placeholder="e.g. 07700 900456" />
+          </div>
+          <div class="form-group">
+            <label for="reg-community-address">Delivery Address <span class="req">*</span></label>
+            <input type="text" class="form-control" id="reg-community-address" placeholder="e.g. 5 City Road, Bristol" />
+          </div>
+          <div class="form-group">
+            <label for="reg-community-postcode">Postcode <span class="req">*</span></label>
+            <input type="text" class="form-control" id="reg-community-postcode" placeholder="e.g. BS2 8TX" />
+          </div>
+          <div class="form-group">
+            <label for="reg-community-type">Group Type <span style="color:var(--text-muted);font-weight:400">(optional)</span></label>
+            <input type="text" class="form-control" id="reg-community-type" placeholder="e.g. Food Bank, School, Charity" />
           </div>
         </div>
         <div class="terms-row hidden" id="terms-row">
@@ -801,9 +866,83 @@
     btn.textContent = input.type === 'password' ? '👁' : '🙈';
   }
 
-  // Default register to producer tab
-  setRegisterRole('producer');
+  // FIX 1: Default register to customer tab — matches the dropdown's selected="customer" value.
+  // Previously this called setRegisterRole('producer'), which overrode the dropdown default
+  // and caused the form to always open showing producer fields even though the dropdown
+  // displayed "Individual Customer".
+  setRegisterRole('customer');
 </script>
+
+
+    <!-- ==================== RESTAURANT DASHBOARD ==================== -->
+    <div class="page" id="page-restaurant-dash">
+      <div class="container">
+        <div class="dashboard-layout">
+          <aside class="dashboard-sidebar">
+            <div class="sidebar-user">
+              <div class="sidebar-avatar-fallback" id="rdash-avatar">R</div>
+              <h4 id="rdash-user-name">Restaurant</h4>
+              <span class="role-tag">Restaurant</span>
+            </div>
+            <ul class="sidebar-nav" id="rdash-sidebar">
+              <li class="active" onclick="setRestaurantTab('marketplace')">Marketplace</li>
+              <li onclick="setRestaurantTab('profile')">My Profile</li>
+              <li class="danger" onclick="logout()">Log out</li>
+            </ul>
+          </aside>
+          <main id="rdash-content">
+            <div class="dashboard-section active" id="rdash-marketplace">
+              <div class="dash-header">
+                <h2>Wholesale Marketplace</h2>
+                <p style="color:var(--text-muted);font-size:14px">Wholesale prices shown in green where available.</p>
+              </div>
+              <div id="rdash-marketplace-content">
+                <p style="color:var(--text-muted);padding:24px 0">Loading products...</p>
+              </div>
+            </div>
+            <div class="dashboard-section" id="rdash-profile">
+              <div class="dash-header"><h2>My Profile</h2></div>
+              <p style="color:var(--text-muted)">Profile management coming soon.</p>
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== COMMUNITY GROUP DASHBOARD ==================== -->
+    <div class="page" id="page-community-dash">
+      <div class="container">
+        <div class="dashboard-layout">
+          <aside class="dashboard-sidebar">
+            <div class="sidebar-user">
+              <div class="sidebar-avatar-fallback" id="cdash-community-avatar">C</div>
+              <h4 id="cdash-community-user-name">Community Group</h4>
+              <span class="role-tag">Community Group</span>
+            </div>
+            <ul class="sidebar-nav" id="cdash-community-sidebar">
+              <li class="active" onclick="setCommunityTab('marketplace')">Marketplace</li>
+              <li onclick="setCommunityTab('profile')">My Profile</li>
+              <li class="danger" onclick="logout()">Log out</li>
+            </ul>
+          </aside>
+          <main id="cdash-content-community">
+            <div class="dashboard-section active" id="cdash-community-marketplace">
+              <div class="dash-header">
+                <h2>Bulk Order Marketplace</h2>
+                <p style="color:var(--text-muted);font-size:14px">Community group wholesale prices shown in green where available.</p>
+              </div>
+              <div id="cdash-marketplace-content-community">
+                <p style="color:var(--text-muted);padding:24px 0">Loading products...</p>
+              </div>
+            </div>
+            <div class="dashboard-section" id="cdash-community-profile">
+              <div class="dash-header"><h2>My Profile</h2></div>
+              <p style="color:var(--text-muted)">Profile management coming soon.</p>
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
 
 </body>
 </html>

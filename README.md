@@ -11,7 +11,7 @@ The platform allows producers to register, list products with allergen informati
 | Layer       | Technology                          |
 |-------------|-------------------------------------|
 | Backend     | Django 5.x, Django REST Framework   |
-| Frontend    | React (placeholder — in development)|
+| Frontend    | Vanilla JS SPA (`frontend/app.js`, `index.html`) |
 | Database    | PostgreSQL 16                       |
 | Containers  | Docker, Docker Compose              |
 | Web Server  | Nginx (frontend container)          |
@@ -244,9 +244,15 @@ BRFNMarketplace-Group/
 │       ├── admin.py            # Admin panel registration
 │       └── migrations/         # Database migration files
 │
-└── frontend/                   # React frontend application
-    ├── Dockerfile              # Instructions to build the frontend container
-    └── index.html              # Placeholder page (React app will replace this)
+└── frontend/                   # Single-page app (vanilla JS)
+    ├── Dockerfile
+    ├── app.js
+    ├── index.html
+    ├── style.css
+    └── src/services/           # API clients (Sprint 2 + Sprint 3)
+        ├── api.js, auth.js, cart.js, products.js, orders.js
+        ├── paymentService.js, adminService.js
+        └── reviewService.js, disputeService.js, notificationService.js, analyticsService.js, wholesaleService.js
 ```
 
 ---
@@ -365,4 +371,33 @@ The application runs as three Docker containers:
 | Al-amin Maina   | Backend Models & Team Lead    | Database models, project management, repo setup      |
 | Dalla Eugene    | Backend API & Business Logic  | DRF serializers, viewsets, API endpoints, permissions |
 | Joel Rowland    | Frontend Development          | React pages, UI components, forms                    |
-| Saad            | Frontend Integration & DevOps | API integration, Docker configuration, testing       |
+| Saad            | Frontend Integration & DevOps | Sprint 3 API services, Docker, E2E checks against TCs |
+
+---
+
+## Sprint 3 features (reviews, disputes, notifications, analytics, wholesale)
+
+Sprint 3 completes test cases **TC-013, TC-014, TC-016, TC-017, TC-018, TC-019, TC-020, TC-023, TC-024** (see `BRFN Sprint3 Guide.pdf` in the repo).
+
+| Area | What was added |
+|------|----------------|
+| Reviews | Product reviews (TC-023), producer replies (TC-024) |
+| Disputes | Customer disputes on delivered orders; admin resolve (TC-014) |
+| Notifications | Subscribe when out of season; dashboard list (TC-016) |
+| Analytics | Producer dashboard metrics (TC-017); admin platform revenue (TC-018) |
+| Wholesale | Restaurant & community group pricing (TC-019, TC-020) |
+| Checkout | Special delivery instructions surfaced end-to-end (TC-013) |
+
+### Sprint 3 API modules (`frontend/src/services/`)
+
+These wrap the REST API using the shared client in `api.js` (session cookies + CSRF for mutating requests):
+
+| File | Purpose |
+|------|---------|
+| `reviewService.js` | `GET/POST /api/products/<id>/reviews/`, `PATCH .../reviews/<rid>/respond/` |
+| `disputeService.js` | `POST/GET /api/orders/<id>/dispute/`, `PATCH /api/admin/disputes/<id>/resolve/` |
+| `notificationService.js` | `POST/DELETE /api/products/<id>/notify/`, `GET /api/auth/notifications/` |
+| `analyticsService.js` | `GET /api/producer/analytics/`, `GET /api/admin/revenue/`, CSV export helper |
+| `wholesaleService.js` | `GET/POST /api/products/<id>/wholesale/` |
+
+**Integration checklist:** service modules are in `frontend/src/services/` and loaded from `frontend/index.html` after `adminService.js`. Wire Joel’s Sprint 3 UI (reviews, disputes, notifications, analytics, wholesale) to these functions. **TC-013:** checkout now includes an optional “Special delivery instructions” field and producer order rows show `special_instructions` when the API returns it. Run through all nine Sprint 3 test cases in the browser once Dalla’s endpoints are deployed.

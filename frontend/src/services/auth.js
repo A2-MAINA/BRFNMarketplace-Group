@@ -24,6 +24,24 @@ async function registerCustomer(data) {
 }
 
 /**
+ * Register a restaurant.
+ * @param {object} data - { email, password, password_confirm, business_name, contact_name, phone_number?, delivery_address, postcode, cuisine_type? }
+ * @returns {Promise<object>}
+ */
+async function registerRestaurant(data) {
+  return post(`${AUTH_BASE}register/restaurant/`, data);
+}
+
+/**
+ * Register a community group.
+ * @param {object} data - { email, password, password_confirm, organisation_name, contact_name, phone_number?, delivery_address, postcode, group_type? }
+ * @returns {Promise<object>}
+ */
+async function registerCommunityGroup(data) {
+  return post(`${AUTH_BASE}register/community-group/`, data);
+}
+
+/**
  * Log in. Sets session cookie; subsequent requests send it via credentials: 'include'.
  * @param {string} email
  * @param {string} password

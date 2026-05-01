@@ -78,15 +78,17 @@ function profileToUser(profile) {
   if (!profile) return null;
   const cp = profile.customer_profile || {};
   const pp = profile.producer_profile || {};
-  const name = cp.full_name || pp.contact_name || profile.name || [profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.email;
+  const rp = profile.restaurant_profile || {};
+  const gp = profile.community_group_profile || {};
+  const name = cp.full_name || pp.contact_name || rp.business_name || gp.organisation_name || profile.name || [profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.email;
   return {
     name,
     email: profile.email,
     role: profile.role,
-    businessName: pp.business_name || null,
-    phone: cp.phone_number || pp.phone_number || '',
-    deliveryAddress: cp.delivery_address || '',
-    postcode: cp.postcode || pp.postcode || '',
+    businessName: pp.business_name || rp.business_name || gp.organisation_name || null,
+    phone: cp.phone_number || pp.phone_number || rp.phone_number || gp.phone_number || '',
+    deliveryAddress: cp.delivery_address || rp.delivery_address || gp.delivery_address || '',
+    postcode: cp.postcode || pp.postcode || rp.postcode || gp.postcode || '',
   };
 }
 
@@ -110,6 +112,9 @@ const state = {
   producerOrdersLoading: false,
   customerOrders: null,
   customerOrdersLoading: false,
+  reviewsData: {},
+  reviewDraft: {},
+  revenueReportData: null,
   producerSettlementReport: null,
   producerSettlementLoading: false,
   checkout: {
@@ -141,7 +146,7 @@ function addToCart(productId, qty = 1) {
 
   // Even if the product isn't in `state.products` (occasionally happens during navigation/refresh),
   // the cart endpoint can still validate the product id, so we should still attempt to add.
-  if (state.currentUser && state.currentUser.role === 'customer') {
+  if (state.currentUser && (state.currentUser.role === 'customer' || state.currentUser.role === 'restaurant' || state.currentUser.role === 'community_group')) {
     addOrUpdateCartItem(productId, qty).then(data => {
       setCartFromApiResponse(data);
       const name = product && product.name ? product.name : 'Item';
@@ -228,6 +233,16 @@ function navigate(page, extra) {
     navigate(state.currentUser ? 'home' : 'login');
     return;
   }
+  if (page === 'restaurant-dash' && (!state.currentUser || state.currentUser.role !== 'restaurant')) {
+    showToast('Access denied.', 'error');
+    navigate(state.currentUser ? 'home' : 'login');
+    return;
+  }
+  if (page === 'community-dash' && (!state.currentUser || state.currentUser.role !== 'community_group')) {
+    showToast('Access denied.', 'error');
+    navigate(state.currentUser ? 'home' : 'login');
+    return;
+  }
 
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   const target = document.getElementById('page-' + page);
@@ -242,6 +257,20 @@ function navigate(page, extra) {
   state.currentPage = page;
   document.querySelectorAll('.nav-link').forEach(l => l.classList.toggle('active', l.dataset.page === page));
   if (page === 'browse')        renderBrowse();
+  if (page === 'restaurant-dash') {
+    const nameEl = document.getElementById('rdash-user-name');
+    if (nameEl && state.currentUser) nameEl.textContent = state.currentUser.name;
+    const avatarEl = document.getElementById('rdash-avatar');
+    if (avatarEl && state.currentUser) avatarEl.textContent = state.currentUser.name[0].toUpperCase();
+    renderRestaurantDash();
+  }
+  if (page === 'community-dash') {
+    const nameEl = document.getElementById('cdash-community-user-name');
+    if (nameEl && state.currentUser) nameEl.textContent = state.currentUser.name;
+    const avatarEl = document.getElementById('cdash-community-avatar');
+    if (avatarEl && state.currentUser) avatarEl.textContent = state.currentUser.name[0].toUpperCase();
+    renderCommunityDash();
+  }
   if (page === 'cart')          renderCart();
   if (page === 'product')       { detailQty = 1; renderProductDetail(extra); }
   if (page === 'producer-dash') {
@@ -409,9 +438,14 @@ function renderProductDetail(productId) {
           </div>
           <button class="btn btn-primary" style="flex:1" onclick="addDetailToCart()">Add to Cart</button>
         </div>
+        ${(p.availability || "").toLowerCase().includes("out") && state.currentUser && state.currentUser.role === "customer" ? '<button id="notify-btn-' + p.id + '" class="btn btn-notify" onclick="handleSubscribeNotification(' + p.id + ')">&#128276; Notify me when back in season</button>' : ""}
       </div>
     </div>`;
-    contentEl.innerHTML = html;
+    contentEl.innerHTML = html + renderReviewsSection(productId);
+    loadProductReviews(productId).then(() => {
+      const sec = document.getElementById(`reviews-section-${productId}`);
+      if (sec) sec.outerHTML = renderReviewsSection(productId);
+    });
   })();
 }
 
@@ -724,7 +758,7 @@ async function handleStripePay() {
     const orderData = {
       delivery_address: deliveryAddress,
       delivery_postcode: deliveryPostcode,
-      special_instructions: '',
+      special_instructions: document.getElementById('checkout-special-instructions')?.value?.trim() || '',
       producer_groups: Object.values(groupsByProducerId),
     };
 
@@ -780,7 +814,7 @@ function renderAuthNavbar() {
         Cart
         <span class="cart-count hidden" id="cart-count">0</span>
       </button>
-      <div class="user-pill" onclick="navigate('${state.currentUser.role === 'admin' ? 'admin-dash' : (state.currentUser.role === 'producer' ? 'producer-dash' : 'customer-dash')}')">
+      <div class="user-pill" onclick="navigate('${state.currentUser.role === 'admin' ? 'admin-dash' : state.currentUser.role === 'producer' ? 'producer-dash' : state.currentUser.role === 'restaurant' ? 'restaurant-dash' : state.currentUser.role === 'community_group' ? 'community-dash' : 'customer-dash'}')">
         <div class="user-avatar">${initials}</div>
         <span class="user-name">${state.currentUser.name.split(' ')[0]}</span>
       </div>
@@ -813,15 +847,39 @@ function handleLogout() {
 }
 
 // ---- REGISTER ----
-let registerRole = 'producer';
+let registerRole = 'customer';
 
+// FIX 3: producer-name-row is now included in the allFieldGroups array so it gets
+// hidden/shown correctly when switching roles. Previously it was always visible.
 function setRegisterRole(role) {
   registerRole = role;
-  document.querySelectorAll('.role-tab').forEach(t => t.classList.toggle('active', t.dataset.role === role));
-  document.getElementById('producer-fields').classList.toggle('hidden', role !== 'producer');
-  document.getElementById('customer-fields').classList.toggle('hidden', role !== 'customer');
-  document.getElementById('terms-row').classList.toggle('hidden', role !== 'customer');
-  document.getElementById('producer-name-row').classList.toggle('hidden', role !== 'producer');
+  // Update dropdown display
+  const dropdown = document.getElementById('reg-role-select');
+  if (dropdown && dropdown.value !== role) dropdown.value = role;
+  // Hide all role-specific field groups (including producer-name-row)
+  const allFieldGroups = ['producer-fields', 'customer-fields', 'restaurant-fields', 'community-group-fields', 'producer-name-row'];
+  allFieldGroups.forEach(function(id) {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  });
+  // Show the correct field group
+  const fieldMap = {
+    'producer': 'producer-fields',
+    'customer': 'customer-fields',
+    'restaurant': 'restaurant-fields',
+    'community_group': 'community-group-fields'
+  };
+  const activeId = fieldMap[role];
+  if (activeId) {
+    const activeEl = document.getElementById(activeId);
+    if (activeEl) activeEl.classList.remove('hidden');
+  }
+  // producer-name-row is only for producers (shared contact name + phone fields)
+  const producerNameRow = document.getElementById('producer-name-row');
+  if (producerNameRow) producerNameRow.classList.toggle('hidden', role !== 'producer');
+  // terms-row is only for customers
+  const termsRow = document.getElementById('terms-row');
+  if (termsRow) termsRow.classList.toggle('hidden', role !== 'customer');
 }
 
 function handleRegister(e) {
@@ -834,13 +892,24 @@ function handleRegister(e) {
   const confirm = document.getElementById('reg-confirm').value;
   let valid = true;
 
+  // FIX 2: validation is now role-specific.
+  // Previously the else branch ran for ALL non-producer roles (including restaurant and
+  // community_group), attempting to validate reg-first-name / reg-last-name which do not
+  // exist for those roles — causing registration to always fail at the frontend.
   if (registerRole === 'producer') {
     if (!name) { showFieldError('reg-name', 'Contact name is required'); valid = false; } else clearFieldError('reg-name');
-  } else {
+  } else if (registerRole === 'customer') {
     clearFieldError('reg-name');
     if (!firstName) { showFieldError('reg-first-name', 'First name is required'); valid = false; } else clearFieldError('reg-first-name');
     if (!lastName) { showFieldError('reg-last-name', 'Last name is required'); valid = false; } else clearFieldError('reg-last-name');
+  } else {
+    // restaurant and community_group — their required fields are inside their own field
+    // groups and are submitted directly; clear any stale errors on the shared name fields.
+    clearFieldError('reg-name');
+    clearFieldError('reg-first-name');
+    clearFieldError('reg-last-name');
   }
+
   if (!email.includes('@')) { showFieldError('reg-email', 'Valid email required'); valid = false; } else clearFieldError('reg-email');
   if (password.length < 8) { showFieldError('reg-password', 'Password must be at least 8 characters'); valid = false; } else clearFieldError('reg-password');
   if (password !== confirm)  { showFieldError('reg-confirm', 'Passwords do not match'); valid = false; } else clearFieldError('reg-confirm');
@@ -851,27 +920,48 @@ function handleRegister(e) {
   }
   if (!valid) return;
 
-  const doRegister = registerRole === 'producer'
-    ? () => registerProducer({
-        email,
-        password,
-        password_confirm: confirm,
-        business_name: document.getElementById('reg-business')?.value?.trim() || name,
-        contact_name: name,
-        phone_number: document.getElementById('reg-phone')?.value?.trim() || '',
-        address: document.getElementById('reg-address')?.value?.trim() || '—',
-        postcode: document.getElementById('reg-postcode')?.value?.trim() || '—',
-      })
-    : () => registerCustomer({
-        email,
-        password,
-        password_confirm: confirm,
-        full_name: `${firstName} ${lastName}`.trim(),
-        phone_number: document.getElementById('reg-phone')?.value?.trim() || '',
-        delivery_address: document.getElementById('reg-delivery')?.value?.trim() || '—',
-        postcode: document.getElementById('reg-postcode')?.value?.trim() || '—',
-        terms_accepted: true,
-      });
+  let doRegister;
+  if (registerRole === 'producer') {
+    doRegister = () => registerProducer({
+      email, password, password_confirm: confirm,
+      business_name: document.getElementById('reg-business')?.value?.trim() || name,
+      contact_name: name,
+      phone_number: document.getElementById('reg-phone')?.value?.trim() || '',
+      address: document.getElementById('reg-address')?.value?.trim() || '-',
+      postcode: document.getElementById('reg-postcode')?.value?.trim() || '-',
+    });
+  } else if (registerRole === 'customer') {
+    doRegister = () => registerCustomer({
+      email, password, password_confirm: confirm,
+      full_name: (firstName + ' ' + lastName).trim(),
+      phone_number: document.getElementById('reg-phone')?.value?.trim() || '',
+      delivery_address: document.getElementById('reg-delivery')?.value?.trim() || '-',
+      postcode: document.getElementById('reg-postcode')?.value?.trim() || '-',
+      terms_accepted: true,
+    });
+  } else if (registerRole === 'restaurant') {
+    doRegister = () => registerRestaurant({
+      email, password, password_confirm: confirm,
+      business_name: document.getElementById('reg-restaurant-name')?.value?.trim() || '',
+      contact_name: document.getElementById('reg-restaurant-contact')?.value?.trim() || '',
+      phone_number: document.getElementById('reg-restaurant-phone')?.value?.trim() || '',
+      delivery_address: document.getElementById('reg-restaurant-address')?.value?.trim() || '-',
+      postcode: document.getElementById('reg-restaurant-postcode')?.value?.trim() || '-',
+      cuisine_type: document.getElementById('reg-restaurant-cuisine')?.value?.trim() || '',
+    });
+  } else if (registerRole === 'community_group') {
+    doRegister = () => registerCommunityGroup({
+      email, password, password_confirm: confirm,
+      organisation_name: document.getElementById('reg-community-name')?.value?.trim() || '',
+      contact_name: document.getElementById('reg-community-contact')?.value?.trim() || '',
+      phone_number: document.getElementById('reg-community-phone')?.value?.trim() || '',
+      delivery_address: document.getElementById('reg-community-address')?.value?.trim() || '-',
+      postcode: document.getElementById('reg-community-postcode')?.value?.trim() || '-',
+      group_type: document.getElementById('reg-community-type')?.value?.trim() || '',
+    });
+  } else {
+    showToast('Please select an account type.', 'error'); return;
+  }
 
   doRegister()
     .then(() => login(email, password))
@@ -880,7 +970,11 @@ function handleRegister(e) {
       state.currentUser = profileToUser(profile);
       renderAuthNavbar();
       showToast(`Welcome, ${state.currentUser.name.split(' ')[0]}! Account created.`, 'success');
-      navigate(state.currentUser.role === 'producer' ? 'producer-dash' : 'customer-dash');
+      const regDest = state.currentUser.role === 'producer' ? 'producer-dash'
+        : state.currentUser.role === 'restaurant' ? 'restaurant-dash'
+        : state.currentUser.role === 'community_group' ? 'community-dash'
+        : 'customer-dash';
+      navigate(regDest);
       if (state.currentUser.role === 'customer') {
         getCart().then(setCartFromApiResponse).catch(() => {});
       }
@@ -914,6 +1008,8 @@ function handleLogin(e) {
       showToast(`Welcome back, ${state.currentUser.name.split(' ')[0]}!`, 'success');
       const dest = state.currentUser.role === 'admin' ? 'admin-dash'
         : state.currentUser.role === 'producer' ? 'producer-dash'
+        : state.currentUser.role === 'restaurant' ? 'restaurant-dash'
+        : state.currentUser.role === 'community_group' ? 'community-dash'
         : 'customer-dash';
       navigate(dest);
       if (state.currentUser.role === 'customer') {
@@ -981,7 +1077,7 @@ function renderProducerDash() {
   const emptyRow = `
     <tr>
       <td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted);font-size:14px">
-        You haven’t received any orders yet. When customers checkout, their orders will appear here.
+        You haven't received any orders yet. When customers checkout, their orders will appear here.
       </td>
     </tr>`;
 
@@ -1135,7 +1231,8 @@ function renderProducerDash() {
         <td style="font-weight:700">£${p.price.toFixed(2)}</td>
         <td>${p.stock} ${p.unit}s</td>
         <td><span class="status-pill status-confirmed">${p.availability}</span></td>
-        <td><button class="btn btn-secondary btn-sm" onclick="handleEditProduct(${p.id})">Edit</button></td>
+        <td><button class="btn btn-secondary btn-sm" onclick="handleEditProduct(${p.id})">Edit</button>
+              <button class="btn btn-secondary btn-sm" onclick="showWholesaleModal(${p.id}, ${p.price})">Wholesale Price</button></td>
       </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px">Your products will appear here. Add products via the form below.</td></tr>';
   }
 
@@ -1487,6 +1584,8 @@ function setProducerTab(tab) {
   renderProducerDash();
   if (tab === 'orders' || tab === 'overview') refreshProducerOrders();
   if (tab === 'payments') refreshProducerSettlements();
+  if (tab === 'reviews') renderProducerReviewsTab();
+  if (tab === 'analytics') renderProducerAnalyticsTab();
 }
 
 // ---- CUSTOMER DASHBOARD ----
@@ -1605,6 +1704,9 @@ function renderCustomerDash() {
       btns.push(`<button class="btn btn-reject btn-sm" onclick="handleCancelOrder(${o.id})">Cancel</button>`);
     }
     btns.push(`<button class="btn btn-secondary btn-sm" onclick="handleReorder(${o.id})">Reorder</button>`);
+    if ((o.status || "").toLowerCase() === "delivered") {
+      btns.push(`<button class="btn btn-warning btn-sm" onclick="handleRaiseDispute(${o.id})">Raise Dispute</button>`);
+    }
     return `<div style="display:flex;flex-direction:column;gap:4px">${btns.join('')}</div>`;
   };
 
@@ -1669,6 +1771,7 @@ function setCustomerTab(tab) {
   state.customerDashTab = tab;
   renderCustomerDash();
   if (tab === 'orders') refreshCustomerOrders();
+  if (tab === 'notifications') renderCustomerNotificationsTab();
 }
 
 // ---- ORDER CONFIRMATION PAGE ----
@@ -1883,3 +1986,657 @@ document.addEventListener('DOMContentLoaded', () => {
   const pwInput = document.getElementById('reg-password');
   if (pwInput) pwInput.addEventListener('input', () => checkPasswordStrength(pwInput.value));
 });
+
+// ============================================================
+// SPRINT 3 — NEW FUNCTIONS
+// ============================================================
+
+// ---- REVIEWS (TC-023) ----
+function renderStars(rating) {
+  const full = Math.round(rating);
+  return [1,2,3,4,5].map(i =>
+    '<span class="star ' + (i <= full ? 'star-filled' : 'star-empty') + '">&#9733;</span>'
+  ).join('');
+}
+
+function renderReviewsSection(productId) {
+  const cached = state.reviewsData[productId];
+  const reviews = cached ? (cached.reviews || []) : [];
+  const avg = cached ? (cached.average_rating || 0) : 0;
+  const total = cached ? (cached.total_reviews || reviews.length) : 0;
+
+  const breakdown = [5,4,3,2,1].map(function(star) {
+    const count = reviews.filter(function(r) { return r.rating === star; }).length;
+    const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+    return '<div class="star-breakdown-row">' +
+      '<span class="star-breakdown-label">' + star + '&#9733;</span>' +
+      '<div class="star-breakdown-bar"><div class="star-breakdown-fill" style="width:' + pct + '%"></div></div>' +
+      '<span class="star-breakdown-count">' + count + '</span>' +
+      '</div>';
+  }).join('');
+
+  const reviewsList = reviews.length === 0
+    ? '<p class="no-reviews-msg">No reviews yet. Be the first to review this product!</p>'
+    : reviews.map(function(r) {
+        return '<div class="review-card">' +
+          '<div class="review-header">' +
+          '<span class="review-author">' + (r.customer_name || 'Customer') + '</span>' +
+          '<span class="review-stars">' + renderStars(r.rating) + '</span>' +
+          '<span class="review-date">' + (r.created_at ? new Date(r.created_at).toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'}) : '') + '</span>' +
+          '</div>' +
+          (r.comment ? '<p class="review-comment">' + r.comment + '</p>' : '') +
+          (r.producer_response ? '<div class="producer-response"><span class="producer-response-label">Producer replied:</span><p class="producer-response-text">' + r.producer_response + '</p></div>' : '') +
+          '</div>';
+      }).join('');
+
+  let reviewForm = '';
+  if (state.currentUser && state.currentUser.role === 'customer') {
+    const rating = state.reviewDraft ? (state.reviewDraft.rating || 0) : 0;
+    const stars = [1,2,3,4,5].map(function(i) {
+      return '<span class="star star-input ' + (i <= rating ? 'star-filled' : 'star-empty') + '" onclick="setReviewStar(' + productId + ', ' + i + ')">&#9733;</span>';
+    }).join('');
+    reviewForm = '<div class="review-form-wrap">' +
+      '<h4>Write a Review</h4>' +
+      '<p class="review-eligibility-note">Only available after a delivered order for this product.</p>' +
+      '<div class="star-rating-input" id="star-input-' + productId + '">' + stars +
+      '<span class="star-hint" id="star-hint-' + productId + '">' + (rating ? rating + ' star' + (rating > 1 ? 's' : '') : 'Click to rate') + '</span></div>' +
+      '<textarea id="review-comment-' + productId + '" class="review-textarea" placeholder="Share your experience (optional)..." rows="3"></textarea>' +
+      '<button class="btn btn-primary review-submit-btn" onclick="handleSubmitReview(' + productId + ')">Submit Review</button>' +
+      '</div>';
+  } else if (!state.currentUser) {
+    reviewForm = '<p class="review-eligibility"><a onclick="navigate(\'login\')" style="cursor:pointer;color:var(--forest-mid);font-weight:600">Log in</a> to leave a review after purchasing this product.</p>';
+  }
+
+  return '<div class="reviews-section" id="reviews-section-' + productId + '">' +
+    '<div class="reviews-header">' +
+    '<h3>Customer Reviews</h3>' +
+    (total > 0 ? '<span class="reviews-avg">' + renderStars(avg) + ' <strong>' + Number(avg).toFixed(1) + '</strong> <span class="reviews-count">(' + total + ' review' + (total !== 1 ? 's' : '') + ')</span></span>' : '') +
+    '</div>' +
+    (total > 0 ? '<div class="star-breakdown">' + breakdown + '</div>' : '') +
+    '<div class="reviews-list">' + reviewsList + '</div>' +
+    reviewForm +
+    '</div>';
+}
+
+function setReviewStar(productId, rating) {
+  if (!state.reviewDraft) state.reviewDraft = {};
+  state.reviewDraft.rating = rating;
+  const container = document.getElementById('star-input-' + productId);
+  if (container) {
+    container.querySelectorAll('.star-input').forEach(function(s, i) {
+      s.classList.toggle('star-filled', i < rating);
+      s.classList.toggle('star-empty', i >= rating);
+    });
+    const hint = document.getElementById('star-hint-' + productId);
+    if (hint) hint.textContent = rating + ' star' + (rating > 1 ? 's' : '');
+  }
+}
+
+async function handleSubmitReview(productId) {
+  if (!state.currentUser || state.currentUser.role !== 'customer') {
+    showToast('You must be logged in as a customer to review products.', 'error');
+    return;
+  }
+  const rating = state.reviewDraft && state.reviewDraft.rating;
+  if (!rating) { showToast('Please select a star rating.', 'error'); return; }
+  const commentEl = document.getElementById('review-comment-' + productId);
+  const comment = commentEl ? commentEl.value.trim() : '';
+  const deliveredOrders = (state.customerOrders || []).filter(function(o) {
+    return (o.status || '').toLowerCase() === 'delivered';
+  });
+  if (deliveredOrders.length === 0) {
+    showToast('You can only review products from delivered orders.', 'error');
+    return;
+  }
+  try {
+    const csrfEl = document.cookie.split(';').find(function(c) { return c.trim().startsWith('csrftoken='); });
+    const csrf = csrfEl ? csrfEl.split('=')[1] : '';
+    const res = await fetch('/api/products/' + productId + '/reviews/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+      credentials: 'include',
+      body: JSON.stringify({ rating: rating, comment: comment, order: deliveredOrders[0].id })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Could not submit review.');
+    }
+    showToast('Review submitted! Thank you.', 'success');
+    state.reviewDraft = {};
+    await loadProductReviews(productId);
+    const sec = document.getElementById('reviews-section-' + productId);
+    if (sec) sec.outerHTML = renderReviewsSection(productId);
+  } catch(err) {
+    showToast(apiErrorMessage(err, 'Could not submit review.'), 'error');
+  }
+}
+
+async function loadProductReviews(productId) {
+  try {
+    const res = await fetch('/api/products/' + productId + '/reviews/', { credentials: 'include' });
+    if (!res.ok) return;
+    const data = await res.json();
+    const reviews = data.results || data.reviews || (Array.isArray(data) ? data : []);
+    state.reviewsData[productId] = {
+      reviews: reviews,
+      average_rating: data.average_rating || 0,
+      total_reviews: data.total_reviews || reviews.length,
+    };
+  } catch(e) {
+    state.reviewsData[productId] = { reviews: [], average_rating: 0, total_reviews: 0 };
+  }
+}
+
+// ---- PRODUCER REVIEWS TAB (TC-024) ----
+async function renderProducerReviewsTab() {
+  const container = document.getElementById('pdash-reviews-content');
+  if (!container) return;
+  container.innerHTML = '<p style="color:var(--text-muted);padding:24px 0">Loading reviews...</p>';
+  try {
+    const products = state.producerProducts || [];
+    if (products.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-muted);padding:24px 0">No products listed yet.</p>';
+      return;
+    }
+    let allReviews = [];
+    for (let pi = 0; pi < products.length; pi++) {
+      const p = products[pi];
+      try {
+        const res = await fetch('/api/products/' + p.id + '/reviews/', { credentials: 'include' });
+        if (!res.ok) continue;
+        const data = await res.json();
+        const reviews = data.results || data.reviews || (Array.isArray(data) ? data : []);
+        reviews.forEach(function(r) { r._productId = p.id; r._productName = p.name; });
+        allReviews = allReviews.concat(reviews);
+      } catch(e) {}
+    }
+    if (allReviews.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-muted);padding:24px 0;font-style:italic">No reviews yet. Reviews will appear here once customers have placed and received orders.</p>';
+      return;
+    }
+    container.innerHTML = allReviews.map(function(r) {
+      return '<div class="review-card" style="margin-bottom:16px">' +
+        '<div class="review-card-product-label">' + r._productName + '</div>' +
+        '<div class="review-header">' +
+        '<span class="review-author">' + (r.customer_name || 'Customer') + '</span>' +
+        '<span class="review-stars">' + renderStars(r.rating) + '</span>' +
+        '<span class="review-date">' + (r.created_at ? new Date(r.created_at).toLocaleDateString('en-GB') : '') + '</span>' +
+        '</div>' +
+        (r.comment ? '<p class="review-comment">' + r.comment + '</p>' : '') +
+        (r.producer_response
+          ? '<div class="producer-response"><span class="producer-response-label">Your response:</span><p class="producer-response-text">' + r.producer_response + '</p></div><button class="btn btn-secondary btn-sm" style="margin-top:10px" onclick="showProducerResponseForm(' + r._productId + ', ' + r.id + ')">Edit Response</button>'
+          : '<button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="showProducerResponseForm(' + r._productId + ', ' + r.id + ')">Respond</button>'
+        ) +
+        '<div id="response-form-' + r.id + '" class="producer-response-form hidden"></div>' +
+        '</div>';
+    }).join('');
+  } catch(err) {
+    container.innerHTML = '<p style="color:var(--danger)">Could not load reviews. ' + apiErrorMessage(err, '') + '</p>';
+  }
+}
+
+function showProducerResponseForm(productId, reviewId) {
+  const formDiv = document.getElementById('response-form-' + reviewId);
+  if (!formDiv) return;
+  formDiv.classList.remove('hidden');
+  formDiv.innerHTML = '<textarea id="response-text-' + reviewId + '" class="review-textarea" style="margin-top:12px" placeholder="Write your response..." rows="3"></textarea>' +
+    '<div style="display:flex;gap:10px;margin-top:8px">' +
+    '<button class="btn btn-primary btn-sm" onclick="submitProducerResponse(' + productId + ', ' + reviewId + ')">Submit Response</button>' +
+    '<button class="btn btn-secondary btn-sm" onclick="document.getElementById(\'response-form-' + reviewId + '\').classList.add(\'hidden\')">Cancel</button>' +
+    '</div>';
+}
+
+async function submitProducerResponse(productId, reviewId) {
+  const textEl = document.getElementById('response-text-' + reviewId);
+  const response = textEl ? textEl.value.trim() : '';
+  if (!response) { showToast('Please enter a response.', 'error'); return; }
+  try {
+    const csrfEl = document.cookie.split(';').find(function(c) { return c.trim().startsWith('csrftoken='); });
+    const csrf = csrfEl ? csrfEl.split('=')[1] : '';
+    const res = await fetch('/api/products/' + productId + '/reviews/' + reviewId + '/respond/', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+      credentials: 'include',
+      body: JSON.stringify({ producer_response: response })
+    });
+    if (!res.ok) throw new Error('Could not submit response.');
+    showToast('Response submitted successfully!', 'success');
+    renderProducerReviewsTab();
+  } catch(err) {
+    showToast(apiErrorMessage(err, 'Could not submit response.'), 'error');
+  }
+}
+
+// ---- DISPUTES (TC-014) ----
+var disputeOrderId = null;
+
+function handleRaiseDispute(orderId) {
+  const order = (state.customerOrders || []).find(function(o) { return o.id === orderId; });
+  if (order && order.dispute_status) {
+    showToast('Dispute already raised - status: ' + order.dispute_status, '');
+    return;
+  }
+  disputeOrderId = orderId;
+  const reasonEl = document.getElementById('dispute-reason');
+  const descEl = document.getElementById('dispute-description');
+  if (reasonEl) reasonEl.value = '';
+  if (descEl) descEl.value = '';
+  const overlay = document.getElementById('dispute-overlay');
+  if (overlay) { overlay.classList.remove('hidden'); overlay.style.display = 'flex'; }
+}
+
+function closeDisputeModal() {
+  const overlay = document.getElementById('dispute-overlay');
+  if (overlay) { overlay.classList.add('hidden'); overlay.style.display = 'none'; }
+  disputeOrderId = null;
+}
+
+async function submitDispute() {
+  const reason = document.getElementById('dispute-reason') ? document.getElementById('dispute-reason').value : '';
+  const descEl = document.getElementById('dispute-description');
+  const description = descEl ? descEl.value.trim() : '';
+  if (!reason) { showToast('Please select a reason.', 'error'); return; }
+  if (!description) { showToast('Please provide a description.', 'error'); return; }
+  if (!disputeOrderId) return;
+  try {
+    const csrfEl = document.cookie.split(';').find(function(c) { return c.trim().startsWith('csrftoken='); });
+    const csrf = csrfEl ? csrfEl.split('=')[1] : '';
+    const res = await fetch('/api/orders/' + disputeOrderId + '/dispute/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+      credentials: 'include',
+      body: JSON.stringify({ reason: reason, description: description })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Could not raise dispute.');
+    }
+    showToast('Dispute raised successfully. Our team will review it shortly.', 'success');
+    closeDisputeModal();
+    refreshCustomerOrders();
+  } catch(err) {
+    showToast(apiErrorMessage(err, 'Could not raise dispute.'), 'error');
+  }
+}
+
+// ---- NOTIFICATIONS (TC-016) ----
+async function handleSubscribeNotification(productId) {
+  try {
+    const csrfEl = document.cookie.split(';').find(function(c) { return c.trim().startsWith('csrftoken='); });
+    const csrf = csrfEl ? csrfEl.split('=')[1] : '';
+    const res = await fetch('/api/products/' + productId + '/notify/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+      credentials: 'include'
+    });
+    if (!res.ok) throw new Error('Could not subscribe.');
+    showToast('You will be notified when this product is back in season!', 'success');
+    const btn = document.getElementById('notify-btn-' + productId);
+    if (btn) {
+      btn.textContent = 'Subscribed - Click to unsubscribe';
+      btn.className = 'btn btn-notify-subscribed';
+      btn.onclick = function() { handleUnsubscribeNotification(productId); };
+    }
+  } catch(err) {
+    showToast(apiErrorMessage(err, 'Could not subscribe to notifications.'), 'error');
+  }
+}
+
+async function handleUnsubscribeNotification(productId) {
+  try {
+    const csrfEl = document.cookie.split(';').find(function(c) { return c.trim().startsWith('csrftoken='); });
+    const csrf = csrfEl ? csrfEl.split('=')[1] : '';
+    const res = await fetch('/api/products/' + productId + '/notify/', {
+      method: 'DELETE',
+      headers: { 'X-CSRFToken': csrf },
+      credentials: 'include'
+    });
+    if (!res.ok) throw new Error('Could not unsubscribe.');
+    showToast('Unsubscribed from notifications.', '');
+    const btn = document.getElementById('notify-btn-' + productId);
+    if (btn) {
+      btn.textContent = 'Notify me when back in season';
+      btn.className = 'btn btn-notify';
+      btn.onclick = function() { handleSubscribeNotification(productId); };
+    }
+  } catch(err) {
+    showToast(apiErrorMessage(err, 'Could not unsubscribe.'), 'error');
+  }
+}
+
+async function renderCustomerNotificationsTab() {
+  const container = document.getElementById('cdash-notifications-content');
+  if (!container) return;
+  container.innerHTML = '<p style="color:var(--text-muted);padding:24px 0">Loading...</p>';
+  try {
+    const res = await fetch('/api/auth/notifications/', { credentials: 'include' });
+    if (!res.ok) throw new Error('Could not load notifications.');
+    const data = await res.json();
+    const notifs = Array.isArray(data) ? data : (data.results || []);
+    if (notifs.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-muted);font-style:italic;padding:24px 0">No notifications yet. Subscribe to out-of-season products to get notified when they are back.</p>';
+      return;
+    }
+    container.innerHTML = notifs.map(function(n) {
+      return '<div class="notification-card ' + (n.notified ? 'notification-notified' : '') + '">' +
+        (n.notified ? '<div class="notification-banner">Good news! <strong>' + n.product_name + '</strong> is now back in season! <a onclick="navigate(\'browse\')" style="cursor:pointer;color:var(--forest-mid);font-weight:600">Shop now</a></div>' : '') +
+        '<div class="notification-row">' +
+        '<div><div class="notification-product">' + n.product_name + '</div>' +
+        '<div class="notification-status">' + (n.notified ? 'Back in season' : 'Waiting - out of season') + '</div></div>' +
+        '<span class="notification-badge ' + (n.notified ? 'badge-notified' : 'badge-waiting') + '">' + (n.notified ? 'Notified' : 'Waiting') + '</span>' +
+        '</div></div>';
+    }).join('');
+  } catch(err) {
+    container.innerHTML = '<p style="color:var(--danger)">Could not load notifications. ' + apiErrorMessage(err, '') + '</p>';
+  }
+}
+
+// ---- PRODUCER ANALYTICS (TC-017) ----
+async function renderProducerAnalyticsTab() {
+  const container = document.getElementById('pdash-analytics-content');
+  if (!container) return;
+  container.innerHTML = '<p style="color:var(--text-muted);padding:24px 0">Loading analytics...</p>';
+  try {
+    const res = await fetch('/api/producer/analytics/', { credentials: 'include' });
+    if (!res.ok) throw new Error('Could not load analytics.');
+    const data = await res.json();
+    const fm = function(v) { return '£' + Number(v || 0).toFixed(2); };
+    const topProducts = Array.isArray(data.top_products) ? data.top_products : [];
+    const weeklyRevenue = Array.isArray(data.weekly_revenue) ? data.weekly_revenue : [];
+    const maxRev = weeklyRevenue.length > 0 ? Math.max.apply(null, weeklyRevenue.map(function(w) { return Number(w.revenue || 0); }).concat([1])) : 1;
+    const chartBars = weeklyRevenue.map(function(w) {
+      const pct = Math.round((Number(w.revenue || 0) / maxRev) * 100);
+      return '<div class="analytics-bar-wrap">' +
+        '<div class="analytics-bar-label">' + fm(w.revenue) + '</div>' +
+        '<div class="analytics-bar-outer"><div class="analytics-bar-inner" style="height:' + pct + '%"></div></div>' +
+        '<div class="analytics-bar-week">' + (w.week || '') + '</div></div>';
+    }).join('');
+    const topTable = topProducts.length === 0
+      ? '<p style="color:var(--text-muted);font-style:italic">No delivered orders yet.</p>'
+      : '<table style="width:100%;border-collapse:collapse"><thead><tr style="text-align:left;border-bottom:2px solid var(--cream-dark)"><th style="padding:8px">Product</th><th style="padding:8px">Units Sold</th><th style="padding:8px">Revenue</th></tr></thead><tbody>' +
+        topProducts.map(function(p) {
+          return '<tr style="border-bottom:1px solid var(--cream-dark)"><td style="padding:10px;font-weight:600">' + (p.name || p.product_name || '-') + '</td><td style="padding:10px">' + (p.units_sold || 0) + '</td><td style="padding:10px;font-weight:700;color:var(--forest-mid)">' + fm(p.revenue) + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    container.innerHTML =
+      '<div class="analytics-stats">' +
+      '<div class="stat-card"><div class="label">TOTAL REVENUE</div><div class="value" style="color:var(--forest-mid)">' + fm(data.total_revenue) + '</div><div class="change">Lifetime delivered orders</div></div>' +
+      '<div class="stat-card"><div class="label">TOTAL ORDERS</div><div class="value">' + (data.total_orders || 0) + '</div><div class="change">Delivered orders</div></div>' +
+      '<div class="stat-card"><div class="label">AVG ORDER VALUE</div><div class="value">' + fm(data.average_order_value) + '</div><div class="change">Per delivered order</div></div>' +
+      '<div class="stat-card"><div class="label">COMMISSION PAID</div><div class="value" style="color:var(--gold)">' + fm(data.total_commission_paid) + '</div><div class="change">5% to BRFN network</div></div>' +
+      '</div>' +
+      (weeklyRevenue.length > 0 ? '<div class="analytics-chart-wrap"><h4>Weekly Revenue - Last 8 Weeks</h4><div class="analytics-chart">' + chartBars + '</div></div>' : '') +
+      '<div style="margin-top:32px"><h4 style="margin-bottom:16px">Top 5 Products by Revenue</h4>' + topTable + '</div>';
+  } catch(err) {
+    container.innerHTML = '<p style="color:var(--danger)">Could not load analytics. ' + apiErrorMessage(err, '') + '</p>';
+  }
+}
+
+// ---- ADMIN REVENUE & DISPUTES (TC-018, TC-014 admin) ----
+function showAdminTab(tab) {
+  document.querySelectorAll('#admin-dash-content .dashboard-section').forEach(function(s) {
+    s.classList.toggle('active', s.id === 'adash-' + tab);
+  });
+  const navItems = document.querySelectorAll('.page#page-admin-dash .sidebar-nav li');
+  const tabs = ['commission', 'revenue', 'disputes'];
+  navItems.forEach(function(li, i) { li.classList.toggle('active', tabs[i] === tab); });
+  if (tab === 'revenue') handleLoadRevenueReport();
+  if (tab === 'disputes') renderAdminDisputes();
+}
+
+async function handleLoadRevenueReport() {
+  const fromEl = document.getElementById('adash-revenue-from');
+  const toEl = document.getElementById('adash-revenue-to');
+  const from = fromEl ? fromEl.value : '';
+  const to = toEl ? toEl.value : '';
+  const tbody = document.getElementById('adash-revenue-tbody');
+  const statsDiv = document.getElementById('adash-revenue-stats');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">Loading...</td></tr>';
+  try {
+    let url = '/api/admin/revenue/';
+    const params = [];
+    if (from) params.push('from=' + from);
+    if (to) params.push('to=' + to);
+    if (params.length) url += '?' + params.join('&');
+    const res = await fetch(url, { credentials: 'include' });
+    if (!res.ok) throw new Error('Could not load revenue report.');
+    const data = await res.json();
+    const fm = function(v) { return '£' + Number(v || 0).toFixed(2); };
+    if (statsDiv) {
+      statsDiv.innerHTML =
+        '<div class="stat-card"><div class="label">TOTAL REVENUE</div><div class="value">' + fm(data.total_revenue) + '</div></div>' +
+        '<div class="stat-card"><div class="label">COMMISSION (5%)</div><div class="value" style="color:var(--gold)">' + fm(data.total_commission) + '</div></div>' +
+        '<div class="stat-card"><div class="label">PRODUCER PAYOUTS</div><div class="value">' + fm(data.total_payouts) + '</div></div>' +
+        '<div class="stat-card"><div class="label">ACTIVE PRODUCERS</div><div class="value">' + (data.active_producers || 0) + '</div></div>' +
+        '<div class="stat-card"><div class="label">ACTIVE CUSTOMERS</div><div class="value">' + (data.active_customers || 0) + '</div></div>';
+    }
+    const rows = Array.isArray(data.producers) ? data.producers : [];
+    if (tbody) {
+      tbody.innerHTML = rows.length === 0
+        ? '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">No revenue data for this period.</td></tr>'
+        : rows.map(function(r) {
+            return '<tr><td style="font-weight:600">' + (r.producer_name || r.business_name || '-') + '</td><td style="font-weight:700">' + fm(r.total_sales) + '</td><td style="color:var(--gold)">' + fm(r.commission) + '</td><td style="color:var(--forest-mid)">' + fm(r.payout) + '</td><td>' + (r.order_count || 0) + '</td></tr>';
+          }).join('');
+    }
+    state.revenueReportData = data;
+  } catch(err) {
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--danger)">' + apiErrorMessage(err, 'Could not load revenue report.') + '</td></tr>';
+  }
+}
+
+function handleExportRevenueCSV() {
+  const data = state.revenueReportData;
+  if (!data || !Array.isArray(data.producers) || data.producers.length === 0) {
+    showToast('Load a report first before exporting.', 'error'); return;
+  }
+  const headers = ['producer_name', 'total_sales', 'commission', 'payout', 'order_count'];
+  const rows = data.producers.map(function(r) { return headers.map(function(h) { return '"' + (r[h] != null ? r[h] : '') + '"'; }).join(','); });
+  const csv = [headers.join(',')].concat(rows).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'revenue_report.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function renderAdminDisputes() {
+  const container = document.getElementById('adash-disputes-content');
+  if (!container) return;
+  container.innerHTML = '<p style="color:var(--text-muted);padding:24px 0">Loading disputes...</p>';
+  try {
+    const res = await fetch('/api/admin/disputes/', { credentials: 'include' });
+    if (!res.ok) throw new Error('Could not load disputes.');
+    const data = await res.json();
+    const disputes = Array.isArray(data) ? data : (data.results || []);
+    if (disputes.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-muted);font-style:italic;padding:24px 0">No disputes raised yet.</p>';
+      return;
+    }
+    container.innerHTML = disputes.map(function(d) {
+      return '<div class="review-card" style="margin-bottom:16px">' +
+        '<div class="review-header">' +
+        '<span style="font-weight:700">Order: ' + (d.order_invoice || d.order || '-') + '</span>' +
+        '<span style="font-weight:600;text-transform:capitalize">' + (d.status || '').replace('_', ' ') + '</span>' +
+        '<span class="review-date">' + (d.created_at ? new Date(d.created_at).toLocaleDateString('en-GB') : '') + '</span>' +
+        '</div>' +
+        '<p style="font-size:14px;color:var(--text-muted);margin:4px 0"><strong>Reason:</strong> ' + (d.reason || '').replace('_', ' ') + '</p>' +
+        '<p style="font-size:14px;color:var(--text-body);margin:4px 0">' + (d.description || '') + '</p>' +
+        (d.status === 'open' || d.status === 'under_review'
+          ? '<div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap"><textarea id="dispute-note-' + d.id + '" class="review-textarea" style="flex:1;min-width:200px" placeholder="Resolution note..." rows="2"></textarea><div style="display:flex;flex-direction:column;gap:6px"><button class="btn btn-primary btn-sm" onclick="resolveDispute(' + d.id + ',\'resolved\')">Resolve</button><button class="btn btn-secondary btn-sm" onclick="resolveDispute(' + d.id + ',\'closed\')">Close</button></div></div>'
+          : '<p style="font-size:13px;color:var(--text-muted);margin-top:8px"><strong>Resolution:</strong> ' + (d.resolution_note || '-') + '</p>'
+        ) +
+        '</div>';
+    }).join('');
+  } catch(err) {
+    container.innerHTML = '<p style="color:var(--danger)">Could not load disputes. ' + apiErrorMessage(err, '') + '</p>';
+  }
+}
+
+async function resolveDispute(disputeId, status) {
+  const noteEl = document.getElementById('dispute-note-' + disputeId);
+  const note = noteEl ? noteEl.value.trim() : '';
+  if (!note) { showToast('Please enter a resolution note.', 'error'); return; }
+  try {
+    const csrfEl = document.cookie.split(';').find(function(c) { return c.trim().startsWith('csrftoken='); });
+    const csrf = csrfEl ? csrfEl.split('=')[1] : '';
+    const res = await fetch('/api/admin/disputes/' + disputeId + '/resolve/', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+      credentials: 'include',
+      body: JSON.stringify({ status: status, resolution_note: note })
+    });
+    if (!res.ok) throw new Error('Could not resolve dispute.');
+    showToast('Dispute ' + status + ' successfully.', 'success');
+    renderAdminDisputes();
+  } catch(err) {
+    showToast(apiErrorMessage(err, 'Could not resolve dispute.'), 'error');
+  }
+}
+
+// ---- WHOLESALE PRICING (TC-019, TC-020) ----
+var wholesaleProductId = null;
+var wholesaleStandardPrice = 0;
+
+function showWholesaleModal(productId, standardPrice) {
+  wholesaleProductId = productId;
+  wholesaleStandardPrice = standardPrice;
+  const priceEl = document.getElementById('wholesale-standard-price');
+  if (priceEl) priceEl.textContent = '£' + Number(standardPrice).toFixed(2);
+  const btEl = document.getElementById('wholesale-buyer-type');
+  const prEl = document.getElementById('wholesale-price');
+  const mqEl = document.getElementById('wholesale-min-qty');
+  if (btEl) btEl.value = '';
+  if (prEl) prEl.value = '';
+  if (mqEl) mqEl.value = '1';
+  const overlay = document.getElementById('wholesale-overlay');
+  if (overlay) { overlay.classList.remove('hidden'); overlay.style.display = 'flex'; }
+}
+
+function closeWholesaleModal() {
+  const overlay = document.getElementById('wholesale-overlay');
+  if (overlay) { overlay.classList.add('hidden'); overlay.style.display = 'none'; }
+  wholesaleProductId = null;
+}
+
+async function submitWholesalePrice() {
+  const btEl = document.getElementById('wholesale-buyer-type');
+  const prEl = document.getElementById('wholesale-price');
+  const mqEl = document.getElementById('wholesale-min-qty');
+  const buyerType = btEl ? btEl.value : '';
+  const price = prEl ? parseFloat(prEl.value) : NaN;
+  const minQty = mqEl ? (parseInt(mqEl.value) || 1) : 1;
+  if (!buyerType) { showToast('Please select a buyer type.', 'error'); return; }
+  if (!price || isNaN(price) || price <= 0) { showToast('Please enter a valid price.', 'error'); return; }
+  if (price >= wholesaleStandardPrice) {
+    showToast('Wholesale price must be lower than the standard price (' + '£' + Number(wholesaleStandardPrice).toFixed(2) + ').', 'error');
+    return;
+  }
+  try {
+    const csrfEl = document.cookie.split(';').find(function(c) { return c.trim().startsWith('csrftoken='); });
+    const csrf = csrfEl ? csrfEl.split('=')[1] : '';
+    const res = await fetch('/api/products/' + wholesaleProductId + '/wholesale/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+      credentials: 'include',
+      body: JSON.stringify({ buyer_type: buyerType, price: price.toFixed(2), minimum_quantity: minQty, is_active: true })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || err.price || 'Could not save wholesale price.');
+    }
+    showToast('Wholesale price saved successfully!', 'success');
+    closeWholesaleModal();
+  } catch(err) {
+    showToast(apiErrorMessage(err, 'Could not save wholesale price.'), 'error');
+  }
+}
+
+// ============================================================
+// RESTAURANT & COMMUNITY GROUP — New Registration Functions
+// ============================================================
+
+async function registerRestaurant(data) {
+  return post('/api/auth/register/restaurant/', data);
+}
+
+async function registerCommunityGroup(data) {
+  return post('/api/auth/register/community-group/', data);
+}
+
+// ---- RESTAURANT DASHBOARD ----
+function renderRestaurantDash() {
+  const container = document.getElementById('rdash-marketplace-content');
+  if (!container) return;
+  // Restaurant sees same marketplace but with wholesale prices
+  renderWholesaleMarketplace('restaurant', container);
+}
+
+// ---- COMMUNITY GROUP DASHBOARD ----
+function renderCommunityDash() {
+  const container = document.getElementById('cdash-marketplace-content-community');
+  if (!container) return;
+  renderWholesaleMarketplace('community_group', container);
+}
+
+async function renderWholesaleMarketplace(role, container) {
+  container.innerHTML = '<p style="color:var(--text-muted);padding:24px 0">Loading products...</p>';
+  try {
+    const products = state.products.length > 0 ? state.products : await loadCatalog().then(() => state.products);
+    if (products.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-muted);padding:24px 0">No products available.</p>';
+      return;
+    }
+    // Fetch wholesale prices for all products
+    const wholesalePrices = {};
+    await Promise.all(products.map(async function(p) {
+      try {
+        const res = await fetch('/api/products/' + p.id + '/wholesale/', { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.price && data.is_active) {
+            wholesalePrices[p.id] = data;
+          }
+        }
+      } catch(e) {}
+    }));
+
+    container.innerHTML = '<div class="wholesale-grid">' + products.map(function(p) {
+      const ws = wholesalePrices[p.id];
+      const hasWholesale = ws && ws.price;
+      return '<div class="product-card wholesale-card">' +
+        '<img src="' + (p.img || 'images/vegetables.jpg') + '" alt="' + p.name + '" onerror="this.src=\'images/vegetables.jpg\'" />' +
+        '<div class="product-card-body">' +
+        '<div class="product-name">' + p.name + '</div>' +
+        '<div class="product-producer" style="font-size:12px;color:var(--text-muted)">' + (p.producer || '') + '</div>' +
+        (hasWholesale
+          ? '<div class="wholesale-price-display">' +
+            '<span class="standard-price-crossed">£' + Number(p.price).toFixed(2) + '/' + (p.unit || 'unit') + '</span>' +
+            '<span class="wholesale-price-green">£' + Number(ws.price).toFixed(2) + '/' + (p.unit || 'unit') + ' (wholesale)</span>' +
+            '<span class="wholesale-min-qty">Min. ' + (ws.minimum_quantity || 1) + ' ' + (p.unit || 'units') + '</span>' +
+            '</div>'
+          : '<div class="product-price">£' + Number(p.price).toFixed(2) + '/' + (p.unit || 'unit') + '</div>'
+        ) +
+        '<button class="btn btn-primary btn-sm" style="margin-top:12px;width:100%" onclick="addToCart(' + p.id + ', 1)">Add to Cart</button>' +
+        '</div></div>';
+    }).join('') + '</div>';
+  } catch(err) {
+    container.innerHTML = '<p style="color:var(--danger)">Could not load products. ' + apiErrorMessage(err, '') + '</p>';
+  }
+}
+
+function setRestaurantTab(tab) {
+  document.querySelectorAll('#rdash-content .dashboard-section').forEach(function(s) {
+    s.classList.toggle('active', s.id === 'rdash-' + tab);
+  });
+  document.querySelectorAll('#page-restaurant-dash .sidebar-nav li').forEach(function(li, i) {
+    li.classList.toggle('active', i === (['marketplace', 'profile'].indexOf(tab)));
+  });
+  if (tab === 'marketplace') renderRestaurantDash();
+}
+
+function setCommunityTab(tab) {
+  document.querySelectorAll('#cdash-content-community .dashboard-section').forEach(function(s) {
+    s.classList.toggle('active', s.id === 'cdash-community-' + tab);
+  });
+  if (tab === 'marketplace') renderCommunityDash();
+}
