@@ -1186,6 +1186,15 @@ function renderProducerDash() {
       }).join('')}</div>`;
     };
 
+    const escapeHTML = (s) => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    const specialInstructionsHTML = (o) => {
+      const note = (o && o.special_instructions) ? String(o.special_instructions).trim() : '';
+      if (!note) return '';
+      return `<div class="order-special-instructions" style="margin-top:6px;padding:6px 8px;background:#fff7e6;border-left:3px solid var(--gold);border-radius:4px;font-size:12px;color:var(--charcoal)">
+          <strong style="color:var(--forest)">Special instructions:</strong> ${escapeHTML(note)}
+        </div>`;
+    };
+
     const rows = filteredOrders.map(o => `
       <tr>
         <td>${toOrderId(o)}</td>
@@ -1195,6 +1204,7 @@ function renderProducerDash() {
         <td>
           <span style="font-size:13px;font-weight:600;color:var(--charcoal)">${toItemsCount(o)} item${Number(toItemsCount(o)) !== 1 ? 's' : ''}</span>
           ${toItemsDetail(o)}
+          ${specialInstructionsHTML(o)}
         </td>
         <td style="font-weight:700">${formatMoney(toTotal(o))}</td>
         <td>
@@ -1565,6 +1575,21 @@ async function refreshCustomerOrders() {
     const data = await getCustomerOrderHistory();
     const orders = Array.isArray(data) ? data : (data && (data.orders || data.results)) ? (data.orders || data.results) : [];
     state.customerOrders = Array.isArray(orders) ? orders : [];
+    // TC-014: attach dispute info to any order eligible to have one
+    await Promise.all(state.customerOrders.map(async (o) => {
+      const status = String(o.status || '').toLowerCase();
+      if (status === 'pending' || status === 'cancelled') { o.dispute = null; return; }
+      try {
+        const res = await fetch('/api/orders/' + o.id + '/dispute/', { credentials: 'include' });
+        if (res.ok) {
+          o.dispute = await res.json();
+        } else {
+          o.dispute = null;
+        }
+      } catch (e) {
+        o.dispute = null;
+      }
+    }));
   } catch (err) {
     state.customerOrders = [];
     showToast(apiErrorMessage(err, 'Could not load your order history.'), 'error');
@@ -1697,6 +1722,16 @@ function renderCustomerDash() {
     }).join('');
   };
 
+  const disputeBadge = (o) => {
+    if (!o || !o.dispute) return '';
+    const status = String(o.dispute.status || '').toLowerCase();
+    const labels = { open: 'Dispute Open', under_review: 'Dispute Under Review', resolved: 'Dispute Resolved', closed: 'Dispute Closed' };
+    const colours = { open: '#b91c1c', under_review: '#b45309', resolved: '#15803d', closed: '#4b5563' };
+    const label = labels[status] || ('Dispute: ' + status);
+    const bg = colours[status] || '#4b5563';
+    return `<div style="margin-top:6px"><span class="status-pill" style="background:${bg};color:#fff;padding:3px 8px;font-size:11px;border-radius:4px;font-weight:600">${label}</span></div>`;
+  };
+
   const orderActions = (o) => {
     const btns = [];
     btns.push(`<button class="btn btn-secondary btn-sm" onclick="handleViewReceipt(${o.id})">Receipt</button>`);
@@ -1704,10 +1739,11 @@ function renderCustomerDash() {
       btns.push(`<button class="btn btn-reject btn-sm" onclick="handleCancelOrder(${o.id})">Cancel</button>`);
     }
     btns.push(`<button class="btn btn-secondary btn-sm" onclick="handleReorder(${o.id})">Reorder</button>`);
-    if ((o.status || "").toLowerCase() === "delivered") {
+    const disputeStatus = o.dispute && String(o.dispute.status || '').toLowerCase();
+    if ((o.status || "").toLowerCase() === "delivered" && (!disputeStatus || disputeStatus === 'closed')) {
       btns.push(`<button class="btn btn-warning btn-sm" onclick="handleRaiseDispute(${o.id})">Raise Dispute</button>`);
     }
-    return `<div style="display:flex;flex-direction:column;gap:4px">${btns.join('')}</div>`;
+    return `<div style="display:flex;flex-direction:column;gap:4px">${btns.join('')}${disputeBadge(o)}</div>`;
   };
 
   ordTable.innerHTML = filteredCustOrders.map(o => `
@@ -2212,8 +2248,8 @@ var disputeOrderId = null;
 
 function handleRaiseDispute(orderId) {
   const order = (state.customerOrders || []).find(function(o) { return o.id === orderId; });
-  if (order && order.dispute_status) {
-    showToast('Dispute already raised - status: ' + order.dispute_status, '');
+  if (order && order.dispute && ['open', 'under_review', 'resolved'].indexOf(String(order.dispute.status || '').toLowerCase()) !== -1) {
+    showToast('Dispute already raised - status: ' + order.dispute.status, '');
     return;
   }
   disputeOrderId = orderId;
@@ -2405,16 +2441,17 @@ async function handleLoadRevenueReport() {
       statsDiv.innerHTML =
         '<div class="stat-card"><div class="label">TOTAL REVENUE</div><div class="value">' + fm(data.total_revenue) + '</div></div>' +
         '<div class="stat-card"><div class="label">COMMISSION (5%)</div><div class="value" style="color:var(--gold)">' + fm(data.total_commission) + '</div></div>' +
-        '<div class="stat-card"><div class="label">PRODUCER PAYOUTS</div><div class="value">' + fm(data.total_payouts) + '</div></div>' +
+        '<div class="stat-card"><div class="label">PRODUCER PAYOUTS</div><div class="value">' + fm(data.total_producer_payouts) + '</div></div>' +
+        '<div class="stat-card"><div class="label">TOTAL ORDERS</div><div class="value">' + (data.total_orders || 0) + '</div></div>' +
         '<div class="stat-card"><div class="label">ACTIVE PRODUCERS</div><div class="value">' + (data.active_producers || 0) + '</div></div>' +
         '<div class="stat-card"><div class="label">ACTIVE CUSTOMERS</div><div class="value">' + (data.active_customers || 0) + '</div></div>';
     }
-    const rows = Array.isArray(data.producers) ? data.producers : [];
+    const rows = Array.isArray(data.revenue_by_producer) ? data.revenue_by_producer : [];
     if (tbody) {
       tbody.innerHTML = rows.length === 0
         ? '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">No revenue data for this period.</td></tr>'
         : rows.map(function(r) {
-            return '<tr><td style="font-weight:600">' + (r.producer_name || r.business_name || '-') + '</td><td style="font-weight:700">' + fm(r.total_sales) + '</td><td style="color:var(--gold)">' + fm(r.commission) + '</td><td style="color:var(--forest-mid)">' + fm(r.payout) + '</td><td>' + (r.order_count || 0) + '</td></tr>';
+            return '<tr><td style="font-weight:600">' + (r.producer_email || '-') + '</td><td style="font-weight:700">' + fm(r.subtotal) + '</td><td style="color:var(--gold)">' + fm(r.commission) + '</td><td style="color:var(--forest-mid)">' + fm(r.payout) + '</td><td>' + (r.orders || 0) + '</td></tr>';
           }).join('');
     }
     state.revenueReportData = data;
@@ -2425,11 +2462,11 @@ async function handleLoadRevenueReport() {
 
 function handleExportRevenueCSV() {
   const data = state.revenueReportData;
-  if (!data || !Array.isArray(data.producers) || data.producers.length === 0) {
+  if (!data || !Array.isArray(data.revenue_by_producer) || data.revenue_by_producer.length === 0) {
     showToast('Load a report first before exporting.', 'error'); return;
   }
-  const headers = ['producer_name', 'total_sales', 'commission', 'payout', 'order_count'];
-  const rows = data.producers.map(function(r) { return headers.map(function(h) { return '"' + (r[h] != null ? r[h] : '') + '"'; }).join(','); });
+  const headers = ['producer_email', 'subtotal', 'commission', 'payout', 'orders'];
+  const rows = data.revenue_by_producer.map(function(r) { return headers.map(function(h) { return '"' + (r[h] != null ? r[h] : '') + '"'; }).join(','); });
   const csv = [headers.join(',')].concat(rows).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
@@ -2444,7 +2481,7 @@ async function renderAdminDisputes() {
   if (!container) return;
   container.innerHTML = '<p style="color:var(--text-muted);padding:24px 0">Loading disputes...</p>';
   try {
-    const res = await fetch('/api/admin/disputes/', { credentials: 'include' });
+    const res = await fetch('/api/orders/admin/disputes/', { credentials: 'include' });
     if (!res.ok) throw new Error('Could not load disputes.');
     const data = await res.json();
     const disputes = Array.isArray(data) ? data : (data.results || []);
@@ -2479,7 +2516,7 @@ async function resolveDispute(disputeId, status) {
   try {
     const csrfEl = document.cookie.split(';').find(function(c) { return c.trim().startsWith('csrftoken='); });
     const csrf = csrfEl ? csrfEl.split('=')[1] : '';
-    const res = await fetch('/api/admin/disputes/' + disputeId + '/resolve/', {
+    const res = await fetch('/api/orders/admin/disputes/' + disputeId + '/resolve/', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
       credentials: 'include',

@@ -53,6 +53,11 @@
     <div id="checkout-producer-sections"></div>
 
     <div class="form-group" style="margin-top:14px">
+      <label for="checkout-special-instructions">Special delivery instructions <span style="color:var(--text-muted);font-weight:400">(optional)</span></label>
+      <textarea id="checkout-special-instructions" class="form-control" rows="2" maxlength="500" placeholder="e.g. Please leave at the back gate" style="resize:vertical"></textarea>
+    </div>
+
+    <div class="form-group" style="margin-top:14px">
       <label>Card Details <span class="req">*</span></label>
       <div id="stripe-card-element" style="padding:12px;border:1px solid rgba(0,0,0,0.14);border-radius:12px"></div>
       <div id="stripe-card-error" style="color:#b91c1c;font-size:13px;margin-top:8px"></div>
@@ -758,7 +763,9 @@
           <span class="role-tag">Admin</span>
         </div>
         <ul class="sidebar-nav">
-          <li class="active" onclick="navigate('admin-dash')">Commission Report</li>
+          <li class="active" onclick="showAdminTab('commission')">Commission Report</li>
+          <li onclick="showAdminTab('revenue')">Revenue Report</li>
+          <li onclick="showAdminTab('disputes')">Disputes</li>
         </ul>
       </aside>
       <main id="admin-dash-content">
@@ -804,6 +811,64 @@
               </table>
             </div>
 
+          </div>
+        </div>
+
+        <!-- ============== Platform Revenue Report (TC-018) ============== -->
+        <div class="dashboard-section" id="adash-revenue">
+          <div class="dash-header">
+            <h2>Platform Revenue Report (TC-018)</h2>
+          </div>
+          <div class="form-card" style="max-width:1100px">
+            <div class="form-row">
+              <div class="form-group">
+                <label>From</label>
+                <input type="date" id="adash-revenue-from" class="form-control" />
+              </div>
+              <div class="form-group">
+                <label>To</label>
+                <input type="date" id="adash-revenue-to" class="form-control" />
+              </div>
+            </div>
+            <div style="display:flex;gap:12px;margin-top:10px">
+              <button class="btn btn-primary btn-sm" onclick="handleLoadRevenueReport()" type="button">Load report</button>
+              <button class="btn btn-secondary btn-sm" onclick="handleExportRevenueCSV()" type="button">Export CSV</button>
+            </div>
+
+            <div id="adash-revenue-stats" class="analytics-stats" style="margin-top:18px;display:flex;flex-wrap:wrap;gap:12px"></div>
+
+            <div class="data-table" style="margin-top:16px">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Producer</th>
+                    <th>Subtotal</th>
+                    <th>Commission</th>
+                    <th>Payout (95%)</th>
+                    <th>Orders</th>
+                  </tr>
+                </thead>
+                <tbody id="adash-revenue-tbody">
+                  <tr>
+                    <td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted);font-size:14px">
+                      Load a report to see revenue by producer.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============== Disputes (TC-014 admin) ============== -->
+        <div class="dashboard-section" id="adash-disputes">
+          <div class="dash-header">
+            <h2>Disputes (TC-014)</h2>
+          </div>
+          <div class="form-card" style="max-width:1100px">
+            <div id="adash-disputes-content">
+              <p style="color:var(--text-muted);padding:24px 0">Open the tab to load disputes.</p>
+            </div>
           </div>
         </div>
       </main>
