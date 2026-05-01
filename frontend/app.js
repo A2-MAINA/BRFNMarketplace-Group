@@ -80,16 +80,33 @@ function profileToUser(profile) {
   if (!profile) return null;
   const cp = profile.customer_profile || {};
   const pp = profile.producer_profile || {};
-  const name = cp.full_name || pp.contact_name || profile.name || [profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.email;
+  const rp = profile.restaurant_profile || {};
+  const gp = profile.community_group_profile || {};
+  const name =
+    cp.full_name ||
+    pp.contact_name ||
+    rp.business_name ||
+    gp.organisation_name ||
+    profile.name ||
+    [profile.first_name, profile.last_name].filter(Boolean).join(' ') ||
+    profile.email;
   return {
     name,
     email: profile.email,
     role: profile.role,
-    businessName: pp.business_name || null,
-    phone: cp.phone_number || pp.phone_number || '',
-    deliveryAddress: cp.delivery_address || '',
-    postcode: cp.postcode || pp.postcode || '',
+    businessName: pp.business_name || rp.business_name || gp.organisation_name || null,
+    phone: cp.phone_number || pp.phone_number || rp.phone_number || gp.phone_number || '',
+    deliveryAddress: cp.delivery_address || rp.delivery_address || gp.delivery_address || '',
+    postcode: cp.postcode || pp.postcode || rp.postcode || gp.postcode || '',
   };
+}
+
+function dashboardForRole(role) {
+  if (role === 'admin') return 'admin-dash';
+  if (role === 'producer') return 'producer-dash';
+  if (role === 'restaurant') return 'restaurant-dash';
+  if (role === 'community_group') return 'community-dash';
+  return 'customer-dash';
 }
 
 // ---- APP STATE ----
@@ -145,7 +162,8 @@ function addToCart(productId, qty = 1) {
 
   // Even if the product isn't in `state.products` (occasionally happens during navigation/refresh),
   // the cart endpoint can still validate the product id, so we should still attempt to add.
-  if (state.currentUser && state.currentUser.role === 'customer') {
+  const role = state.currentUser && state.currentUser.role;
+  if (role === 'customer' || role === 'restaurant' || role === 'community_group') {
     addOrUpdateCartItem(productId, qty).then(data => {
       setCartFromApiResponse(data);
       const name = product && product.name ? product.name : 'Item';
@@ -153,7 +171,7 @@ function addToCart(productId, qty = 1) {
     }).catch(err => showToast(apiErrorMessage(err, 'Could not add to cart'), 'error'));
     return;
   }
-  if (state.currentUser && state.currentUser.role === 'producer') {
+  if (role === 'producer') {
     showToast('Producers use the dashboard to manage orders', '');
     return;
   }
@@ -1164,8 +1182,9 @@ function handleCheckout() {
     navigate('login');
     return;
   }
-  if (state.currentUser.role !== 'customer') {
-    showToast('Producers cannot check out.', 'error');
+  const role = state.currentUser.role;
+  if (role === 'producer' || role === 'admin') {
+    showToast('This role cannot check out.', 'error');
     return;
   }
   if (!state.cart || state.cart.length === 0) {
@@ -1193,8 +1212,8 @@ function handleCheckout() {
 }
 
 async function handleStripePay() {
-  if (!state.currentUser || state.currentUser.role !== 'customer') {
-    showToast('Please log in as a customer to pay.', 'error');
+  if (!state.currentUser || !['customer', 'restaurant', 'community_group'].includes(state.currentUser.role)) {
+    showToast('Please log in with a buyer account to pay.', 'error');
     return;
   }
   if (!stripeInstance || !stripeCard) {
@@ -1284,7 +1303,7 @@ async function handleStripePay() {
     const cart = await getCart();
     setCartFromApiResponse(cart);
 
-    navigate('customer-dash');
+    navigate(dashboardForRole(state.currentUser && state.currentUser.role));
   } catch (err) {
     showToast(apiErrorMessage(err, 'Checkout failed.'), 'error');
   } finally {
@@ -1306,7 +1325,7 @@ function renderAuthNavbar() {
         Cart
         <span class="cart-count hidden" id="cart-count">0</span>
       </button>
-      <div class="user-pill" onclick="navigate('${state.currentUser.role === 'admin' ? 'admin-dash' : (state.currentUser.role === 'producer' ? 'producer-dash' : 'customer-dash')}')">
+      <div class="user-pill" onclick="navigate('${dashboardForRole(state.currentUser.role)}')">
         <div class="user-avatar">${initials}</div>
         <span class="user-name">${state.currentUser.name.split(' ')[0]}</span>
       </div>
@@ -1343,11 +1362,14 @@ let registerRole = 'producer';
 
 function setRegisterRole(role) {
   registerRole = role;
-  document.querySelectorAll('.role-tab').forEach(t => t.classList.toggle('active', t.dataset.role === role));
+  const roleSelect = document.getElementById('reg-role');
+  if (roleSelect && roleSelect.value !== role) roleSelect.value = role;
   document.getElementById('producer-fields').classList.toggle('hidden', role !== 'producer');
-  document.getElementById('customer-fields').classList.toggle('hidden', role !== 'customer');
-  document.getElementById('terms-row').classList.toggle('hidden', role !== 'customer');
   document.getElementById('producer-name-row').classList.toggle('hidden', role !== 'producer');
+  document.getElementById('customer-fields').classList.toggle('hidden', role !== 'customer');
+  document.getElementById('restaurant-fields').classList.toggle('hidden', role !== 'restaurant');
+  document.getElementById('community-fields').classList.toggle('hidden', role !== 'community_group');
+  document.getElementById('terms-row').classList.toggle('hidden', role !== 'customer');
 }
 
 function handleRegister(e) {
@@ -1362,10 +1384,34 @@ function handleRegister(e) {
 
   if (registerRole === 'producer') {
     if (!name) { showFieldError('reg-name', 'Contact name is required'); valid = false; } else clearFieldError('reg-name');
-  } else {
+  } else if (registerRole === 'customer') {
     clearFieldError('reg-name');
     if (!firstName) { showFieldError('reg-first-name', 'First name is required'); valid = false; } else clearFieldError('reg-first-name');
     if (!lastName) { showFieldError('reg-last-name', 'Last name is required'); valid = false; } else clearFieldError('reg-last-name');
+  } else {
+    clearFieldError('reg-name');
+    clearFieldError('reg-first-name');
+    clearFieldError('reg-last-name');
+  }
+  if (registerRole === 'restaurant') {
+    const business = document.getElementById('reg-restaurant-business')?.value?.trim() || '';
+    const contact = document.getElementById('reg-restaurant-contact')?.value?.trim() || '';
+    const address = document.getElementById('reg-restaurant-address')?.value?.trim() || '';
+    const postcode = document.getElementById('reg-restaurant-postcode')?.value?.trim() || '';
+    if (!business || !contact || !address || !postcode) {
+      showToast('Restaurant sign-up needs business name, contact, address, and postcode.', 'error');
+      valid = false;
+    }
+  }
+  if (registerRole === 'community_group') {
+    const org = document.getElementById('reg-community-org')?.value?.trim() || '';
+    const contact = document.getElementById('reg-community-contact')?.value?.trim() || '';
+    const address = document.getElementById('reg-community-address')?.value?.trim() || '';
+    const postcode = document.getElementById('reg-community-postcode')?.value?.trim() || '';
+    if (!org || !contact || !address || !postcode) {
+      showToast('Community sign-up needs organisation name, contact, address, and postcode.', 'error');
+      valid = false;
+    }
   }
   if (!email.includes('@')) { showFieldError('reg-email', 'Valid email required'); valid = false; } else clearFieldError('reg-email');
   if (password.length < 8) { showFieldError('reg-password', 'Password must be at least 8 characters'); valid = false; } else clearFieldError('reg-password');
@@ -1397,7 +1443,30 @@ function handleRegister(e) {
         delivery_address: document.getElementById('reg-delivery')?.value?.trim() || '—',
         postcode: document.getElementById('reg-postcode')?.value?.trim() || '—',
         terms_accepted: true,
-      });
+      })
+    : registerRole === 'restaurant'
+      ? () => registerRestaurant({
+          email,
+          password,
+          password_confirm: confirm,
+          business_name: document.getElementById('reg-restaurant-business')?.value?.trim() || '',
+          contact_name: document.getElementById('reg-restaurant-contact')?.value?.trim() || '',
+          phone_number: document.getElementById('reg-restaurant-phone')?.value?.trim() || '',
+          delivery_address: document.getElementById('reg-restaurant-address')?.value?.trim() || '',
+          postcode: document.getElementById('reg-restaurant-postcode')?.value?.trim() || '',
+          cuisine_type: document.getElementById('reg-restaurant-cuisine')?.value?.trim() || '',
+        })
+      : () => registerCommunityGroup({
+          email,
+          password,
+          password_confirm: confirm,
+          organisation_name: document.getElementById('reg-community-org')?.value?.trim() || '',
+          contact_name: document.getElementById('reg-community-contact')?.value?.trim() || '',
+          phone_number: document.getElementById('reg-community-phone')?.value?.trim() || '',
+          delivery_address: document.getElementById('reg-community-address')?.value?.trim() || '',
+          postcode: document.getElementById('reg-community-postcode')?.value?.trim() || '',
+          group_type: document.getElementById('reg-community-type')?.value?.trim() || '',
+        });
 
   doRegister()
     .then(() => login(email, password))
@@ -1406,8 +1475,8 @@ function handleRegister(e) {
       state.currentUser = profileToUser(profile);
       renderAuthNavbar();
       showToast(`Welcome, ${state.currentUser.name.split(' ')[0]}! Account created.`, 'success');
-      navigate(state.currentUser.role === 'producer' ? 'producer-dash' : 'customer-dash');
-      if (state.currentUser.role === 'customer') {
+      navigate(dashboardForRole(state.currentUser.role));
+      if (['customer', 'restaurant', 'community_group'].includes(state.currentUser.role)) {
         getCart().then(setCartFromApiResponse).catch(() => {});
       }
     })
@@ -1438,8 +1507,8 @@ function handleLogin(e) {
       state.currentUser = profileToUser(profile);
       renderAuthNavbar();
       showToast(`Welcome back, ${state.currentUser.name.split(' ')[0]}!`, 'success');
-      navigate(state.currentUser.role === 'producer' ? 'producer-dash' : 'customer-dash');
-      if (state.currentUser.role === 'customer') {
+      navigate(dashboardForRole(state.currentUser.role));
+      if (['customer', 'restaurant', 'community_group'].includes(state.currentUser.role)) {
         getCart().then(setCartFromApiResponse).catch(() => {});
       }
     })
@@ -2179,7 +2248,7 @@ function initAuthAndCart() {
     .then(profile => {
       state.currentUser = profileToUser(profile);
       renderAuthNavbar();
-      if (state.currentUser.role === 'customer') {
+      if (['customer', 'restaurant', 'community_group'].includes(state.currentUser.role)) {
         return getCart().then(setCartFromApiResponse);
       } else if (state.currentUser.role === 'producer') {
         return getProducts({ mine: true }).then(prods => {

@@ -370,6 +370,14 @@
           onclick="document.getElementById('login-email').value='producer@example.com';document.getElementById('login-password').value='Password1!'">
           Producer Demo
         </button>
+        <button class="btn btn-secondary btn-sm btn-full"
+          onclick="document.getElementById('login-email').value='restaurant@example.com';document.getElementById('login-password').value='Password1!'">
+          Restaurant Demo
+        </button>
+        <button class="btn btn-secondary btn-sm btn-full"
+          onclick="document.getElementById('login-email').value='community@example.com';document.getElementById('login-password').value='Password1!'">
+          Community Group Demo
+        </button>
       </div>
       <div class="auth-switch">Don't have an account? <a href="javascript:void(0)" onclick="typeof navigate==='function'&&navigate('register');return false">Sign up here</a></div>
     </div>
@@ -391,12 +399,17 @@
         <h2>Create your account</h2>
         <p>Join the BRFN Marketplace today</p>
       </div>
-      <div class="role-tabs">
-        <button class="role-tab" data-role="customer" onclick="setRegisterRole('customer')">Customer</button>
-        <button class="role-tab active" data-role="producer" onclick="setRegisterRole('producer')">Producer</button>
+      <div class="form-group">
+        <label for="reg-role">Register as <span class="req">*</span></label>
+        <select class="form-control" id="reg-role" onchange="setRegisterRole(this.value)">
+          <option value="customer">Individual Customer</option>
+          <option value="producer">Producer / Farm</option>
+          <option value="restaurant">Restaurant / Food Business</option>
+          <option value="community_group">Community Group / Charity</option>
+        </select>
       </div>
       <form onsubmit="handleRegister(event)" novalidate>
-        <div id="producer-fields">
+        <div id="producer-fields" class="hidden">
           <div class="form-group">
             <label for="reg-business">Business Name <span class="req">*</span></label>
             <input type="text" class="form-control" id="reg-business" placeholder="e.g. Bristol Valley Farm" />
@@ -421,6 +434,66 @@
           <div class="form-group">
             <label for="reg-phone">Phone Number</label>
             <input type="tel" class="form-control" id="reg-phone" placeholder="01179 123456" />
+          </div>
+        </div>
+        <div id="restaurant-fields" class="hidden">
+          <div class="form-group">
+            <label for="reg-restaurant-business">Business Name <span class="req">*</span></label>
+            <input type="text" class="form-control" id="reg-restaurant-business" placeholder="e.g. The Green Plate Restaurant" />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="reg-restaurant-contact">Contact Name <span class="req">*</span></label>
+              <input type="text" class="form-control" id="reg-restaurant-contact" placeholder="Manager or owner" />
+            </div>
+            <div class="form-group">
+              <label for="reg-restaurant-phone">Phone Number</label>
+              <input type="tel" class="form-control" id="reg-restaurant-phone" placeholder="01179 456789" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="reg-restaurant-address">Delivery Address <span class="req">*</span></label>
+            <input type="text" class="form-control" id="reg-restaurant-address" placeholder="12 Clifton Road, Bristol" />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="reg-restaurant-postcode">Postcode <span class="req">*</span></label>
+              <input type="text" class="form-control" id="reg-restaurant-postcode" placeholder="BS8 1AB" />
+            </div>
+            <div class="form-group">
+              <label for="reg-restaurant-cuisine">Cuisine Type (optional)</label>
+              <input type="text" class="form-control" id="reg-restaurant-cuisine" placeholder="e.g. Farm-to-table" />
+            </div>
+          </div>
+        </div>
+        <div id="community-fields" class="hidden">
+          <div class="form-group">
+            <label for="reg-community-org">Organisation Name <span class="req">*</span></label>
+            <input type="text" class="form-control" id="reg-community-org" placeholder="e.g. St. Pauls Community Kitchen" />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="reg-community-contact">Contact Name <span class="req">*</span></label>
+              <input type="text" class="form-control" id="reg-community-contact" placeholder="Coordinator name" />
+            </div>
+            <div class="form-group">
+              <label for="reg-community-phone">Phone Number</label>
+              <input type="tel" class="form-control" id="reg-community-phone" placeholder="07700 900456" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="reg-community-address">Delivery Address <span class="req">*</span></label>
+            <input type="text" class="form-control" id="reg-community-address" placeholder="5 City Road, Bristol" />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="reg-community-postcode">Postcode <span class="req">*</span></label>
+              <input type="text" class="form-control" id="reg-community-postcode" placeholder="BS2 8TX" />
+            </div>
+            <div class="form-group">
+              <label for="reg-community-type">Group Type (optional)</label>
+              <input type="text" class="form-control" id="reg-community-type" placeholder="e.g. Charity, Food Bank" />
+            </div>
           </div>
         </div>
         <div class="form-group">
@@ -755,6 +828,38 @@
   </div>
 </div>
 
+<!-- ==================== RESTAURANT DASHBOARD ==================== -->
+<div class="page" id="page-restaurant-dash">
+  <div class="container section">
+    <span class="section-tag">Restaurant Dashboard</span>
+    <h2>Trade marketplace access</h2>
+    <p style="max-width:760px;color:var(--text-muted)">
+      View wholesale pricing for restaurant accounts and place bulk orders from local producers.
+      Trade prices are shown in the marketplace when available.
+    </p>
+    <div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="navigate('browse')">Open Marketplace</button>
+      <button class="btn btn-secondary" onclick="navigate('cart')">View Cart</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== COMMUNITY GROUP DASHBOARD ==================== -->
+<div class="page" id="page-community-dash">
+  <div class="container section">
+    <span class="section-tag">Community Group Dashboard</span>
+    <h2>Bulk order marketplace access</h2>
+    <p style="max-width:760px;color:var(--text-muted)">
+      View community wholesale pricing and place bulk orders for your organisation.
+      Wholesale prices appear in the marketplace when available for your role.
+    </p>
+    <div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="navigate('browse')">Open Marketplace</button>
+      <button class="btn btn-secondary" onclick="navigate('cart')">View Cart</button>
+    </div>
+  </div>
+</div>
+
 <!-- ==================== ADMIN DASHBOARD ==================== -->
 <div class="page" id="page-admin-dash">
   <div class="container">
@@ -926,8 +1031,8 @@
     btn.textContent = input.type === 'password' ? '👁' : '🙈';
   }
 
-  // Default register to producer tab
-  setRegisterRole('producer');
+  // Default registration role
+  setRegisterRole('customer');
 </script>
 
 </body>
