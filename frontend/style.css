@@ -523,6 +523,82 @@ footer { background: var(--forest); color: rgba(255,255,255,0.65); padding: 52px
 .footer-bottom { border-top: 1px solid rgba(255,255,255,0.1); padding-top: 24px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
 
 /* ============================================================
+   RECEIPT / ORDER CONFIRMATION
+============================================================ */
+#page-order-confirm .container.section {
+  display: flex;
+  justify-content: center;
+}
+
+.confirm-page {
+  width: min(980px, 100%);
+  margin: 8px auto 24px;
+}
+
+.confirm-header {
+  text-align: center;
+  margin-bottom: 18px;
+}
+
+.confirm-check {
+  width: 68px;
+  height: 68px;
+  margin: 0 auto 12px;
+  border-radius: 999px;
+  background: #e9f8ee;
+  color: #166534;
+  border: 2px solid #bbf7d0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  font-weight: 800;
+}
+
+.confirm-header h1 { margin: 0 0 6px; }
+.confirm-invoice { margin: 0; color: var(--text-muted); font-size: 14px; }
+
+.confirm-sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.confirm-card {
+  background: var(--warm-white);
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+  padding: 16px;
+}
+
+.confirm-card h3 {
+  margin: 0 0 12px;
+  font-size: 20px;
+  color: var(--forest);
+}
+
+.confirm-summary-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px dashed rgba(0,0,0,0.12);
+  font-size: 14px;
+}
+
+.confirm-summary-row:last-child { border-bottom: none; }
+
+.confirm-actions {
+  margin-top: 18px;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* ============================================================
    RESPONSIVE
 ============================================================ */
 @media (max-width: 900px) {
@@ -540,4 +616,5 @@ footer { background: var(--forest); color: rgba(255,255,255,0.65); padding: 52px
   .how-grid { grid-template-columns: 1fr; }
   .footer-inner { grid-template-columns: 1fr; gap: 28px; }
   .allergen-checks { grid-template-columns: repeat(2,1fr); }
+  .confirm-sections { grid-template-columns: 1fr; }
 }

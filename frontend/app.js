@@ -249,6 +249,7 @@ function navigate(page, extra) {
   if (page === 'browse')        renderBrowse();
   if (page === 'cart')          renderCart();
   if (page === 'product')       { detailQty = 1; renderProductDetail(extra); }
+  if (page === 'order-confirm') renderOrderConfirmation(state.lastConfirmedOrder);
   if (page === 'producer-dash') {
     if (state.currentUser && state.currentUser.role === 'producer') {
       getProducts({ mine: true })
@@ -263,6 +264,62 @@ function navigate(page, extra) {
     renderAdminDash();
   }
   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderOrderConfirmation(order) {
+  const el = document.getElementById('order-confirm-content');
+  if (!el) return;
+  if (!order) {
+    el.innerHTML = '<div style="text-align:center;padding:60px 0"><h2>No receipt available</h2><button class="btn btn-primary" onclick="navigate(\'customer-dash\')">Back to My Orders</button></div>';
+    return;
+  }
+
+  const fm = (v) => {
+    const n = typeof v === 'string' ? parseFloat(v) : Number(v);
+    return Number.isFinite(n) ? n.toFixed(2) : '0.00';
+  };
+
+  const payment = order.payment || {};
+  const receipt = order.receipt || {};
+  const stripe = receipt.stripe || {};
+  const paymentNumber = receipt.payment_number || payment.payment_number || '-';
+  const receiptNumber = receipt.receipt_number || '-';
+  const paymentIntent = stripe.payment_intent_id || payment.transaction_id || '-';
+  const chargeId = stripe.charge_id || payment.stripe_charge_id || '-';
+  const customerEmail = (receipt.customer && receipt.customer.email) || order.customer_email || '-';
+  const methodType = payment.payment_method_type || receipt.payment_method_type || '-';
+  const methodLast4 = payment.payment_method_last4 || receipt.payment_method_last4 || '';
+  const stripeReceiptUrl = stripe.receipt_url || payment.receipt_url || '';
+
+  el.innerHTML = `
+    <div class="confirm-page">
+      <div class="confirm-header">
+        <div class="confirm-check">&#10003;</div>
+        <h1>Payment Receipt</h1>
+        <p class="confirm-invoice">${order.invoice_number || ('Order #' + order.id)}</p>
+      </div>
+      <div class="confirm-sections">
+        <div class="confirm-card">
+          <h3>Order Summary</h3>
+          <div class="confirm-summary-row"><span>Total paid</span><span>£${fm(order.total_amount)}</span></div>
+          <div class="confirm-summary-row"><span>Status</span><span>${order.status || '-'}</span></div>
+        </div>
+        <div class="confirm-card">
+          <h3>Payment Tracking</h3>
+          <div class="confirm-summary-row"><span>Receipt number</span><span>${receiptNumber}</span></div>
+          <div class="confirm-summary-row"><span>Payment number</span><span>${paymentNumber}</span></div>
+          <div class="confirm-summary-row"><span>Payment intent ID</span><span style="max-width:60%;text-align:right;word-break:break-all">${paymentIntent}</span></div>
+          <div class="confirm-summary-row"><span>Stripe charge ID</span><span style="max-width:60%;text-align:right;word-break:break-all">${chargeId}</span></div>
+          <div class="confirm-summary-row"><span>Customer email</span><span>${customerEmail}</span></div>
+          <div class="confirm-summary-row"><span>Payment method</span><span>${methodType}${methodLast4 ? ` ****${methodLast4}` : ''}</span></div>
+          ${stripeReceiptUrl ? `<div style="margin-top:10px"><a href="${stripeReceiptUrl}" target="_blank" rel="noopener noreferrer">View Stripe receipt</a></div>` : ''}
+        </div>
+      </div>
+      <div class="confirm-actions">
+        <button class="btn btn-primary" onclick="navigate('customer-dash')">Back to My Orders</button>
+        <button class="btn btn-secondary" onclick="window.print()">Print Receipt</button>
+      </div>
+    </div>`;
 }
 
 // ---- BROWSE ----
@@ -1423,50 +1480,54 @@ function handleRegister(e) {
   }
   if (!valid) return;
 
-  const doRegister = registerRole === 'producer'
-    ? () => registerProducer({
-        email,
-        password,
-        password_confirm: confirm,
-        business_name: document.getElementById('reg-business')?.value?.trim() || name,
-        contact_name: name,
-        phone_number: document.getElementById('reg-phone')?.value?.trim() || '',
-        address: document.getElementById('reg-address')?.value?.trim() || '—',
-        postcode: document.getElementById('reg-postcode')?.value?.trim() || '—',
-      })
-    : () => registerCustomer({
-        email,
-        password,
-        password_confirm: confirm,
-        full_name: `${firstName} ${lastName}`.trim(),
-        phone_number: document.getElementById('reg-phone')?.value?.trim() || '',
-        delivery_address: document.getElementById('reg-delivery')?.value?.trim() || '—',
-        postcode: document.getElementById('reg-postcode')?.value?.trim() || '—',
-        terms_accepted: true,
-      })
-    : registerRole === 'restaurant'
-      ? () => registerRestaurant({
-          email,
-          password,
-          password_confirm: confirm,
-          business_name: document.getElementById('reg-restaurant-business')?.value?.trim() || '',
-          contact_name: document.getElementById('reg-restaurant-contact')?.value?.trim() || '',
-          phone_number: document.getElementById('reg-restaurant-phone')?.value?.trim() || '',
-          delivery_address: document.getElementById('reg-restaurant-address')?.value?.trim() || '',
-          postcode: document.getElementById('reg-restaurant-postcode')?.value?.trim() || '',
-          cuisine_type: document.getElementById('reg-restaurant-cuisine')?.value?.trim() || '',
-        })
-      : () => registerCommunityGroup({
-          email,
-          password,
-          password_confirm: confirm,
-          organisation_name: document.getElementById('reg-community-org')?.value?.trim() || '',
-          contact_name: document.getElementById('reg-community-contact')?.value?.trim() || '',
-          phone_number: document.getElementById('reg-community-phone')?.value?.trim() || '',
-          delivery_address: document.getElementById('reg-community-address')?.value?.trim() || '',
-          postcode: document.getElementById('reg-community-postcode')?.value?.trim() || '',
-          group_type: document.getElementById('reg-community-type')?.value?.trim() || '',
-        });
+  let doRegister;
+  if (registerRole === 'producer') {
+    doRegister = () => registerProducer({
+      email,
+      password,
+      password_confirm: confirm,
+      business_name: document.getElementById('reg-business')?.value?.trim() || name,
+      contact_name: name,
+      phone_number: document.getElementById('reg-phone')?.value?.trim() || '',
+      address: document.getElementById('reg-address')?.value?.trim() || '—',
+      postcode: document.getElementById('reg-postcode')?.value?.trim() || '—',
+    });
+  } else if (registerRole === 'customer') {
+    doRegister = () => registerCustomer({
+      email,
+      password,
+      password_confirm: confirm,
+      full_name: `${firstName} ${lastName}`.trim(),
+      phone_number: document.getElementById('reg-phone')?.value?.trim() || '',
+      delivery_address: document.getElementById('reg-delivery')?.value?.trim() || '—',
+      postcode: document.getElementById('reg-postcode')?.value?.trim() || '—',
+      terms_accepted: true,
+    });
+  } else if (registerRole === 'restaurant') {
+    doRegister = () => registerRestaurant({
+      email,
+      password,
+      password_confirm: confirm,
+      business_name: document.getElementById('reg-restaurant-business')?.value?.trim() || '',
+      contact_name: document.getElementById('reg-restaurant-contact')?.value?.trim() || '',
+      phone_number: document.getElementById('reg-restaurant-phone')?.value?.trim() || '',
+      delivery_address: document.getElementById('reg-restaurant-address')?.value?.trim() || '',
+      postcode: document.getElementById('reg-restaurant-postcode')?.value?.trim() || '',
+      cuisine_type: document.getElementById('reg-restaurant-cuisine')?.value?.trim() || '',
+    });
+  } else {
+    doRegister = () => registerCommunityGroup({
+      email,
+      password,
+      password_confirm: confirm,
+      organisation_name: document.getElementById('reg-community-org')?.value?.trim() || '',
+      contact_name: document.getElementById('reg-community-contact')?.value?.trim() || '',
+      phone_number: document.getElementById('reg-community-phone')?.value?.trim() || '',
+      delivery_address: document.getElementById('reg-community-address')?.value?.trim() || '',
+      postcode: document.getElementById('reg-community-postcode')?.value?.trim() || '',
+      group_type: document.getElementById('reg-community-type')?.value?.trim() || '',
+    });
+  }
 
   doRegister()
     .then(() => login(email, password))
@@ -2004,6 +2065,26 @@ async function handleReorder(orderId) {
   }
 }
 
+async function handleViewReceipt(orderId) {
+  if (orderId == null) return;
+  try {
+    const order = await getOrder(orderId);
+    try {
+      const receipt = await getOrderReceipt(orderId);
+      order.receipt = receipt;
+      if (receipt && receipt.payment && !order.payment) {
+        order.payment = receipt.payment;
+      }
+    } catch (_) {
+      // Keep viewing order confirmation even if receipt endpoint is unavailable.
+    }
+    state.lastConfirmedOrder = order;
+    navigate('order-confirm');
+  } catch (err) {
+    showToast(apiErrorMessage(err, 'Could not load receipt.'), 'error');
+  }
+}
+
 async function handleDownloadSettlementCSV() {
   try {
     await downloadSettlementReport();
@@ -2142,6 +2223,7 @@ function renderCustomerDash() {
       <td style="font-weight:700">${formatMoney(toTotal(o))}</td>
       <td><span class="status-pill status-${toStatus(o).toLowerCase()}">${toStatus(o)}</span>${dispBadge}</td>
       <td style="display:flex;flex-direction:column;align-items:flex-start;gap:6px">
+        <button class="btn btn-secondary btn-sm" onclick="handleViewReceipt(${o.id})">Receipt</button>
         <button class="btn btn-secondary btn-sm" onclick="handleReorder(${o.id})">Reorder</button>
         ${raiseBtn}
       </td>

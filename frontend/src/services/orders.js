@@ -52,6 +52,16 @@ async function getOrder(id) {
 }
 
 /**
+ * Get receipt for a paid order.
+ * Expected: GET /api/orders/<id>/receipt/
+ * @param {number|string} id
+ */
+async function getOrderReceipt(id) {
+  if (id == null) throw new Error('getOrderReceipt: id is required');
+  return get(`/api/orders/${id}/receipt/`);
+}
+
+/**
  * Producer dashboard: incoming orders.
  * Expected: GET /api/orders/producer/
  * @param {object} filters - optional query params, e.g. { status }

@@ -183,6 +183,15 @@ class OrderProducerGroup(models.Model):
         'pickup': Decimal('0.00'),
     }
 
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('confirmed', 'Confirmed'),
+        ('processing', 'Processing'),
+        ('ready', 'Ready'),
+        ('delivered', 'Delivered'),
+        ('rejected', 'Rejected'),
+    ]
+
     order = models.ForeignKey(
         Order,
         on_delete=models.CASCADE,
@@ -194,6 +203,13 @@ class OrderProducerGroup(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='order_producer_groups'
+    )
+
+    # Per-group status — each producer progresses their own group independently
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='pending'
     )
 
     # Customer's fulfilment choice for this producer's items
@@ -419,6 +435,7 @@ class Payment(models.Model):
 
     STATUS_CHOICES = [
         ('pending', 'Pending'),        # Payment intent created, customer not yet paid
+        ('paid', 'Paid'),              # Customer paid successfully, awaiting payout release
         ('processed', 'Processed'),    # Customer paid and producer payout released
         ('failed', 'Failed'),          # Payment failed or was declined by Stripe
         ('refunded', 'Refunded'),      # Payment refunded — order was cancelled or rejected
@@ -433,6 +450,14 @@ class Payment(models.Model):
 
     # Stripe payment intent or charge ID — used for reconciliation and refunds
     transaction_id = models.CharField(max_length=200, blank=True, default='')
+    payment_number = models.CharField(max_length=50, blank=True, default='')
+    stripe_charge_id = models.CharField(max_length=200, blank=True, default='')
+    currency = models.CharField(max_length=10, blank=True, default='gbp')
+    payment_method_type = models.CharField(max_length=50, blank=True, default='')
+    payment_method_last4 = models.CharField(max_length=4, blank=True, default='')
+    receipt_url = models.URLField(blank=True, default='')
+    receipt_number = models.CharField(max_length=50, blank=True, default='')
+    receipt_issued_at = models.DateTimeField(null=True, blank=True)
 
     # Full amount charged to the customer — product prices + delivery fees
     amount = models.DecimalField(max_digits=10, decimal_places=2)
@@ -458,8 +483,16 @@ class Payment(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
 
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        super().save(*args, **kwargs)
+        if is_new and not self.payment_number:
+            year = datetime.date.today().year
+            self.payment_number = f"PAY-{year}-{self.pk:06d}"
+            super().save(update_fields=['payment_number'])
+
     def __str__(self):
         return (
-            f"Payment for Order #{self.order.pk} — "
+            f"{self.payment_number or 'Payment'} for Order #{self.order.pk} — "
             f"£{self.amount} — {self.get_status_display()}"
         )
