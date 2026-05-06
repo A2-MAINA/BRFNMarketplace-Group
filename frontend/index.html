@@ -171,6 +171,89 @@
   </div>
 </div>
 
+<!-- ==================== ORDER STATUS UPDATE MODAL (producer-side) ==================== -->
+<div id="order-status-overlay" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:none;align-items:center;justify-content:center;padding:18px;overflow-y:auto">
+  <div id="order-status-modal" style="width:min(480px,100%);background:#fff;border-radius:14px;box-shadow:0 18px 60px rgba(0,0,0,0.22);padding:24px;max-height:90vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px">
+      <div>
+        <h2 style="margin:0 0 4px" id="order-status-title">Confirm status update</h2>
+        <p style="margin:0;color:var(--text-muted);font-size:13px">New status: <strong id="order-status-target" style="color:var(--charcoal)">—</strong></p>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="closeOrderStatusModal()" type="button">Close</button>
+    </div>
+
+    <div class="form-group">
+      <label for="order-status-note">Note <span style="color:var(--text-muted);font-weight:400">(optional)</span></label>
+      <textarea id="order-status-note" class="form-control" rows="3" maxlength="500" placeholder="e.g. Dispatching tomorrow morning" style="resize:vertical"></textarea>
+      <small style="color:var(--text-muted)">Visible to the customer on their order timeline.</small>
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+      <button class="btn btn-secondary" onclick="closeOrderStatusModal()" type="button">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmOrderStatusUpdate()" type="button" id="order-status-confirm-btn">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== EDIT PRODUCT MODAL (producer-side) ==================== -->
+<div id="edit-product-overlay" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:none;align-items:center;justify-content:center;padding:18px;overflow-y:auto">
+  <div id="edit-product-modal" style="width:min(560px,100%);background:#fff;border-radius:14px;box-shadow:0 18px 60px rgba(0,0,0,0.22);padding:24px;max-height:90vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px">
+      <div>
+        <h2 style="margin:0 0 4px" id="edit-product-title">Edit Product</h2>
+        <p style="margin:0;color:var(--text-muted);font-size:13px">Standard price: <strong id="edit-product-price" style="color:var(--charcoal)">—</strong></p>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="closeEditProductModal()" type="button">Close</button>
+    </div>
+
+    <div class="form-row" style="gap:12px">
+      <div class="form-group" style="flex:1">
+        <label for="edit-product-stock">Stock quantity <span class="req">*</span></label>
+        <input type="number" id="edit-product-stock" class="form-control" min="0" step="1" />
+      </div>
+      <div class="form-group" style="flex:1">
+        <label for="edit-product-availability">Availability <span class="req">*</span></label>
+        <select id="edit-product-availability" class="form-control">
+          <option value="in_season">In Season</option>
+          <option value="out_of_season">Out of Season</option>
+          <option value="pre_order">Pre-Order</option>
+        </select>
+      </div>
+    </div>
+
+    <p style="margin:8px 0 0;color:var(--text-muted);font-size:12px">
+      Marking a product back to "In Season" automatically notifies any customers who subscribed while it was out of season.
+    </p>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+      <button class="btn btn-secondary" onclick="closeEditProductModal()" type="button">Cancel</button>
+      <button class="btn btn-primary" onclick="submitEditProduct()" type="button">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== CANCEL ORDER MODAL (customer-side) ==================== -->
+<div id="cancel-order-overlay" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:none;align-items:center;justify-content:center;padding:18px;overflow-y:auto">
+  <div id="cancel-order-modal" style="width:min(440px,100%);background:#fff;border-radius:14px;box-shadow:0 18px 60px rgba(0,0,0,0.22);padding:24px;max-height:90vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px">
+      <div>
+        <h2 style="margin:0 0 4px">Cancel order?</h2>
+        <p style="margin:0;color:var(--text-muted);font-size:13px">This action cannot be undone.</p>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="closeCancelOrderModal()" type="button">Close</button>
+    </div>
+
+    <p style="font-size:14px;color:var(--text-body);margin:0 0 12px">
+      Under UK Consumer Contracts Regulations 2013 you can cancel while the order is still pending. Once a producer confirms the order, cancellation is no longer permitted. A full refund is issued automatically.
+    </p>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px">
+      <button class="btn btn-secondary" onclick="closeCancelOrderModal()" type="button">Keep order</button>
+      <button class="btn btn-reject" onclick="confirmCancelOrder()" type="button">Cancel order</button>
+    </div>
+  </div>
+</div>
+
 <!-- ==================== HOME PAGE ==================== -->
 <div class="page active" id="page-home">
 

@@ -1378,50 +1378,75 @@ function handleAddProduct(e) {
 
 // ---- Sprint 2: Orders / Settlements / Reorder Wiring ----
 
+// ---- EDIT PRODUCT MODAL (producer-side) ----
+var editingProductId = null;
+
+const _editProductUiToRaw = {
+  'In Season': 'in_season',
+  'Out of Season': 'out_of_season',
+  'Pre-Order': 'pre_order',
+  in_season: 'in_season',
+  out_of_season: 'out_of_season',
+  pre_order: 'pre_order',
+};
+
 function handleEditProduct(productId) {
   const product = (state.producerProducts || []).find(p => p.id === Number(productId));
   if (!product) {
     showToast('Product not found.', 'error');
     return;
   }
+  editingProductId = product.id;
 
-  const stockInput = window.prompt('Enter new stock quantity (0 or more):', String(product.stock ?? 0));
-  if (stockInput === null) return;
-  const nextStock = parseInt(stockInput, 10);
-  if (!Number.isFinite(nextStock) || nextStock < 0) {
+  const titleEl = document.getElementById('edit-product-title');
+  const priceEl = document.getElementById('edit-product-price');
+  const stockEl = document.getElementById('edit-product-stock');
+  const availEl = document.getElementById('edit-product-availability');
+
+  if (titleEl) titleEl.textContent = 'Edit Product: ' + (product.name || 'Untitled');
+  if (priceEl) {
+    const priceNum = Number(product.price);
+    priceEl.textContent = '£' + (Number.isFinite(priceNum) ? priceNum.toFixed(2) : '0.00') + (product.unit ? '/' + product.unit : '');
+  }
+  if (stockEl) stockEl.value = String(product.stock ?? 0);
+  if (availEl) {
+    const raw = _editProductUiToRaw[String(product.availability ?? 'In Season').trim()] || 'in_season';
+    availEl.value = raw;
+  }
+
+  const overlay = document.getElementById('edit-product-overlay');
+  if (overlay) { overlay.classList.remove('hidden'); overlay.style.display = 'flex'; }
+}
+
+function closeEditProductModal() {
+  const overlay = document.getElementById('edit-product-overlay');
+  if (overlay) { overlay.classList.add('hidden'); overlay.style.display = 'none'; }
+  editingProductId = null;
+}
+
+function submitEditProduct() {
+  if (editingProductId == null) {
+    closeEditProductModal();
+    return;
+  }
+  const stockEl = document.getElementById('edit-product-stock');
+  const availEl = document.getElementById('edit-product-availability');
+  const stock = stockEl ? parseInt(stockEl.value, 10) : NaN;
+  const availability = availEl ? availEl.value : '';
+
+  if (!Number.isFinite(stock) || stock < 0) {
     showToast('Stock quantity must be 0 or more.', 'error');
     return;
   }
-
-  const availabilityInput = window.prompt(
-    'Availability (In Season | Out of Season | Pre-Order):',
-    String(product.availability ?? 'In Season')
-  );
-  if (availabilityInput === null) return;
-
-  const uiToRaw = {
-    'In Season': 'in_season',
-    'Out of Season': 'out_of_season',
-    'Pre-Order': 'pre_order',
-    // allow raw backend values too
-    in_season: 'in_season',
-    out_of_season: 'out_of_season',
-    pre_order: 'pre_order',
-  };
-  const chosenAvailability = uiToRaw[String(availabilityInput).trim()];
-  if (!chosenAvailability) {
-    showToast('Invalid availability. Use In Season, Out of Season, or Pre-Order.', 'error');
+  if (!['in_season', 'out_of_season', 'pre_order'].includes(availability)) {
+    showToast('Please choose an availability option.', 'error');
     return;
   }
 
-  const ok = window.confirm(
-    'Update product inventory?\n\n' +
-    `Stock: ${nextStock}\n` +
-    `Availability: ${availabilityInput}`
-  );
-  if (!ok) return;
+  const productId = editingProductId;
+  closeEditProductModal();
 
-  updateProductInventory(productId, { stock_quantity: nextStock, availability: chosenAvailability })
+  updateProductInventory(productId, { stock_quantity: stock, availability })
     .then(() => getProducts({ mine: true }))
     .then((prods) => {
       state.producerProducts = (prods || []).map(apiProductToUI);
@@ -1515,15 +1540,69 @@ async function refreshProducerSettlements() {
   }
 }
 
+// ---- ORDER STATUS UPDATE MODAL (producer-side) ----
+var pendingStatusOrderId = null;
+var pendingStatusNext = null;
+
+const STATUS_LABELS = {
+  confirmed: 'Confirmed',
+  rejected: 'Rejected',
+  processing: 'Processing',
+  ready: 'Ready',
+  delivered: 'Delivered',
+};
+
+const STATUS_TITLES = {
+  confirmed: 'Accept order',
+  rejected: 'Reject order',
+  processing: 'Mark order as processing',
+  ready: 'Mark order as ready',
+  delivered: 'Mark order as delivered',
+};
+
 function handleUpdateOrderStatus(orderId, nextStatus) {
   if (orderId == null || nextStatus == null) {
     showToast('Invalid order status update.', 'error');
     return;
   }
-  const ok = window.confirm(`Update order status to "${nextStatus}"?`);
-  if (!ok) return;
+  const status = String(nextStatus).toLowerCase();
+  pendingStatusOrderId = orderId;
+  pendingStatusNext = status;
 
-  updateOrderStatus(orderId, { status: String(nextStatus).toLowerCase() })
+  const titleEl = document.getElementById('order-status-title');
+  const targetEl = document.getElementById('order-status-target');
+  const noteEl = document.getElementById('order-status-note');
+  const confirmBtn = document.getElementById('order-status-confirm-btn');
+  if (titleEl) titleEl.textContent = STATUS_TITLES[status] || ('Update status to ' + status);
+  if (targetEl) targetEl.textContent = STATUS_LABELS[status] || status;
+  if (noteEl) noteEl.value = '';
+  if (confirmBtn) confirmBtn.classList.toggle('btn-reject', status === 'rejected');
+
+  const overlay = document.getElementById('order-status-overlay');
+  if (overlay) { overlay.classList.remove('hidden'); overlay.style.display = 'flex'; }
+}
+
+function closeOrderStatusModal() {
+  const overlay = document.getElementById('order-status-overlay');
+  if (overlay) { overlay.classList.add('hidden'); overlay.style.display = 'none'; }
+  pendingStatusOrderId = null;
+  pendingStatusNext = null;
+}
+
+function confirmOrderStatusUpdate() {
+  if (pendingStatusOrderId == null || pendingStatusNext == null) {
+    closeOrderStatusModal();
+    return;
+  }
+  const noteEl = document.getElementById('order-status-note');
+  const note = noteEl ? noteEl.value.trim() : '';
+  const payload = { status: pendingStatusNext };
+  if (note) payload.note = note;
+
+  const orderId = pendingStatusOrderId;
+  closeOrderStatusModal();
+
+  updateOrderStatus(orderId, payload)
     .then(() => {
       showToast('Order status updated.', 'success');
       refreshProducerOrders();
@@ -1767,10 +1846,29 @@ async function handleViewReceipt(orderId) {
   }
 }
 
-async function handleCancelOrder(orderId) {
+// ---- CANCEL ORDER MODAL (customer-side) ----
+var pendingCancelOrderId = null;
+
+function handleCancelOrder(orderId) {
   if (orderId == null) return;
-  const ok = window.confirm('Are you sure you want to cancel this order?');
-  if (!ok) return;
+  pendingCancelOrderId = orderId;
+  const overlay = document.getElementById('cancel-order-overlay');
+  if (overlay) { overlay.classList.remove('hidden'); overlay.style.display = 'flex'; }
+}
+
+function closeCancelOrderModal() {
+  const overlay = document.getElementById('cancel-order-overlay');
+  if (overlay) { overlay.classList.add('hidden'); overlay.style.display = 'none'; }
+  pendingCancelOrderId = null;
+}
+
+async function confirmCancelOrder() {
+  if (pendingCancelOrderId == null) {
+    closeCancelOrderModal();
+    return;
+  }
+  const orderId = pendingCancelOrderId;
+  closeCancelOrderModal();
   try {
     await cancelOrder(orderId);
     showToast('Order cancelled.', 'success');
