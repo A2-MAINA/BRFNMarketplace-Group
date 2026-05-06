@@ -28,12 +28,14 @@ echo "Creating demo accounts (if not exists)..."
 python manage.py shell -c "
 from django.contrib.auth import get_user_model
 from django.utils import timezone
-from users.models import ProducerProfile, CustomerProfile
+from users.models import ProducerProfile, CustomerProfile, RestaurantProfile, CommunityGroupProfile
 
 User = get_user_model()
 
 demo_customer_email = 'customer@example.com'
 demo_producer_email = 'producer@example.com'
+demo_restaurant_email = 'restaurant@example.com'
+demo_community_email = 'community@example.com'
 demo_password = 'Password1!'
 
 def upsert_customer(email):
@@ -108,8 +110,76 @@ def upsert_producer(email):
         profile.save()
         print('Demo producer profile ensured:', email)
 
+def upsert_restaurant(email):
+    user = User.objects.filter(email=email).first()
+    if not user:
+        user = User.objects.create_user(email=email, username=email, password=demo_password, role='restaurant')
+        print('Demo restaurant created:', email)
+    else:
+        user.set_password(demo_password)
+        user.role = 'restaurant'
+        user.save(update_fields=['password', 'role'])
+        print('Demo restaurant reset password:', email)
+
+    profile = RestaurantProfile.objects.filter(user=user).first()
+    if not profile:
+        RestaurantProfile.objects.create(
+            user=user,
+            business_name='The Demo Bistro',
+            contact_name='Sam Manager',
+            phone_number='01179 555111',
+            delivery_address='3 King Street, Bristol',
+            postcode='BS1 4EF',
+            cuisine_type='Farm-to-table',
+        )
+        print('Demo restaurant profile created:', email)
+    else:
+        profile.business_name = 'The Demo Bistro'
+        profile.contact_name = 'Sam Manager'
+        profile.phone_number = '01179 555111'
+        profile.delivery_address = '3 King Street, Bristol'
+        profile.postcode = 'BS1 4EF'
+        profile.cuisine_type = 'Farm-to-table'
+        profile.save()
+        print('Demo restaurant profile ensured:', email)
+
+def upsert_community_group(email):
+    user = User.objects.filter(email=email).first()
+    if not user:
+        user = User.objects.create_user(email=email, username=email, password=demo_password, role='community_group')
+        print('Demo community group created:', email)
+    else:
+        user.set_password(demo_password)
+        user.role = 'community_group'
+        user.save(update_fields=['password', 'role'])
+        print('Demo community group reset password:', email)
+
+    profile = CommunityGroupProfile.objects.filter(user=user).first()
+    if not profile:
+        CommunityGroupProfile.objects.create(
+            user=user,
+            organisation_name='Bristol Food Bank',
+            contact_name='Pat Coordinator',
+            phone_number='01179 555222',
+            delivery_address='12 Stokes Croft, Bristol',
+            postcode='BS1 3PS',
+            group_type='Food Bank',
+        )
+        print('Demo community group profile created:', email)
+    else:
+        profile.organisation_name = 'Bristol Food Bank'
+        profile.contact_name = 'Pat Coordinator'
+        profile.phone_number = '01179 555222'
+        profile.delivery_address = '12 Stokes Croft, Bristol'
+        profile.postcode = 'BS1 3PS'
+        profile.group_type = 'Food Bank'
+        profile.save()
+        print('Demo community group profile ensured:', email)
+
 upsert_customer(demo_customer_email)
 upsert_producer(demo_producer_email)
+upsert_restaurant(demo_restaurant_email)
+upsert_community_group(demo_community_email)
 "
 
 echo "Starting Django server..."

@@ -104,6 +104,20 @@ When using Docker Compose, ports are mapped as below (backend 8025, frontend 302
 
 **Check the backend is running:** open http://localhost:8025/healthz/ in your browser — you should see a simple response. If that fails, the frontend will show "Network error" or "backend not working" when you log in or register.
 
+### Demo accounts (auto-seeded by `backend/entrypoint.sh`)
+
+Every fresh `docker compose up` creates one account per role so you can test every dashboard without registering anything:
+
+| Role            | Email                        | Password     |
+|-----------------|------------------------------|--------------|
+| Admin           | admin@brfn.com               | Admin123!    |
+| Customer        | customer@example.com         | Password1!   |
+| Producer        | producer@example.com         | Password1!   |
+| Restaurant      | restaurant@example.com       | Password1!   |
+| Community Group | community@example.com        | Password1!   |
+
+Passwords are reset to the values above on every container start, so demo creds always work.
+
 ---
 
 ## Troubleshooting: "Backend not working" / net::ERR_FAILED
@@ -395,9 +409,9 @@ These wrap the REST API using the shared client in `api.js` (session cookies + C
 | File | Purpose |
 |------|---------|
 | `reviewService.js` | `GET/POST /api/products/<id>/reviews/`, `PATCH .../reviews/<rid>/respond/` |
-| `disputeService.js` | `POST/GET /api/orders/<id>/dispute/`, `PATCH /api/admin/disputes/<id>/resolve/` |
+| `disputeService.js` | `POST/GET /api/orders/<id>/dispute/`, `GET /api/orders/admin/disputes/`, `PATCH /api/orders/admin/disputes/<id>/resolve/` |
 | `notificationService.js` | `POST/DELETE /api/products/<id>/notify/`, `GET /api/auth/notifications/` |
 | `analyticsService.js` | `GET /api/producer/analytics/`, `GET /api/admin/revenue/`, CSV export helper |
 | `wholesaleService.js` | `GET/POST /api/products/<id>/wholesale/` |
 
-**Integration checklist:** service modules are in `frontend/src/services/` and loaded from `frontend/index.html` after `adminService.js`. Wire Joel’s Sprint 3 UI (reviews, disputes, notifications, analytics, wholesale) to these functions. **TC-013:** checkout now includes an optional “Special delivery instructions” field and producer order rows show `special_instructions` when the API returns it. Run through all nine Sprint 3 test cases in the browser once Dalla’s endpoints are deployed.
+**Integration status:** all five Sprint 3 service modules are wired into Joel's UI (reviews section, dispute modal, notify-me button, producer analytics tab, restaurant + community-group dashboards). **TC-013** checkout exposes the optional "Special delivery instructions" field and producer order rows render it when present. All nine Sprint 3 test cases pass end-to-end against the running stack — see [TEST_CASES.md](TEST_CASES.md) for per-TC evidence and curl commands.

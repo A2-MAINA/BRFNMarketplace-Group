@@ -2534,19 +2534,59 @@ async function resolveDispute(disputeId, status) {
 var wholesaleProductId = null;
 var wholesaleStandardPrice = 0;
 
-function showWholesaleModal(productId, standardPrice) {
+function _wholesaleResetTier(prefix) {
+  const cb = document.getElementById('wholesale-' + prefix + '-enabled');
+  const cur = document.getElementById('wholesale-' + prefix + '-current');
+  const pr = document.getElementById('wholesale-' + prefix + '-price');
+  const mq = document.getElementById('wholesale-' + prefix + '-min-qty');
+  if (cb) cb.checked = false;
+  if (cur) cur.textContent = 'Not set';
+  if (pr) pr.value = '';
+  if (mq) mq.value = '1';
+}
+
+function _wholesaleApplyTier(prefix, tier) {
+  // tier is the WholesalePrice row from the API (or null)
+  const cur = document.getElementById('wholesale-' + prefix + '-current');
+  const pr = document.getElementById('wholesale-' + prefix + '-price');
+  const mq = document.getElementById('wholesale-' + prefix + '-min-qty');
+  if (!tier) {
+    if (cur) cur.textContent = 'Not set';
+    return;
+  }
+  const price = Number(tier.price).toFixed(2);
+  const min = tier.minimum_quantity || 1;
+  if (cur) cur.textContent = '£' + price + ' · min ' + min + ' unit' + (min === 1 ? '' : 's');
+  if (pr) pr.value = price;
+  if (mq) mq.value = min;
+}
+
+async function showWholesaleModal(productId, standardPrice) {
   wholesaleProductId = productId;
-  wholesaleStandardPrice = standardPrice;
+  wholesaleStandardPrice = Number(standardPrice) || 0;
   const priceEl = document.getElementById('wholesale-standard-price');
-  if (priceEl) priceEl.textContent = '£' + Number(standardPrice).toFixed(2);
-  const btEl = document.getElementById('wholesale-buyer-type');
-  const prEl = document.getElementById('wholesale-price');
-  const mqEl = document.getElementById('wholesale-min-qty');
-  if (btEl) btEl.value = '';
-  if (prEl) prEl.value = '';
-  if (mqEl) mqEl.value = '1';
+  if (priceEl) priceEl.textContent = '£' + wholesaleStandardPrice.toFixed(2);
+
+  // Reset both tiers, then fetch existing values and pre-fill.
+  _wholesaleResetTier('restaurant');
+  _wholesaleResetTier('community');
+
   const overlay = document.getElementById('wholesale-overlay');
   if (overlay) { overlay.classList.remove('hidden'); overlay.style.display = 'flex'; }
+
+  try {
+    const res = await fetch('/api/products/' + productId + '/wholesale/', { credentials: 'include' });
+    if (res.ok) {
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : (data && data.buyer_type ? [data] : []);
+      const restaurant = list.find(t => t.buyer_type === 'restaurant') || null;
+      const community = list.find(t => t.buyer_type === 'community_group') || null;
+      _wholesaleApplyTier('restaurant', restaurant);
+      _wholesaleApplyTier('community', community);
+    }
+  } catch (e) {
+    // fetch failure is non-fatal — user can still set new prices
+  }
 }
 
 function closeWholesaleModal() {
@@ -2555,37 +2595,64 @@ function closeWholesaleModal() {
   wholesaleProductId = null;
 }
 
-async function submitWholesalePrice() {
-  const btEl = document.getElementById('wholesale-buyer-type');
-  const prEl = document.getElementById('wholesale-price');
-  const mqEl = document.getElementById('wholesale-min-qty');
-  const buyerType = btEl ? btEl.value : '';
-  const price = prEl ? parseFloat(prEl.value) : NaN;
-  const minQty = mqEl ? (parseInt(mqEl.value) || 1) : 1;
-  if (!buyerType) { showToast('Please select a buyer type.', 'error'); return; }
-  if (!price || isNaN(price) || price <= 0) { showToast('Please enter a valid price.', 'error'); return; }
+async function _saveWholesaleTier(buyerType, prefix, csrf) {
+  const cb = document.getElementById('wholesale-' + prefix + '-enabled');
+  if (!cb || !cb.checked) return { skipped: true };
+
+  const pr = document.getElementById('wholesale-' + prefix + '-price');
+  const mq = document.getElementById('wholesale-' + prefix + '-min-qty');
+  const price = pr ? parseFloat(pr.value) : NaN;
+  const minQty = mq ? (parseInt(mq.value, 10) || 1) : 1;
+
+  if (!price || isNaN(price) || price <= 0) {
+    return { error: 'Enter a valid ' + buyerType.replace('_', ' ') + ' price.' };
+  }
   if (price >= wholesaleStandardPrice) {
-    showToast('Wholesale price must be lower than the standard price (' + '£' + Number(wholesaleStandardPrice).toFixed(2) + ').', 'error');
+    return { error: buyerType.replace('_', ' ') + ' wholesale price must be lower than £' + wholesaleStandardPrice.toFixed(2) + '.' };
+  }
+
+  const res = await fetch('/api/products/' + wholesaleProductId + '/wholesale/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+    credentials: 'include',
+    body: JSON.stringify({ buyer_type: buyerType, price: price.toFixed(2), minimum_quantity: minQty, is_active: true })
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    return { error: body.detail || body.price || ('Could not save ' + buyerType + ' wholesale price.') };
+  }
+  return { saved: true };
+}
+
+async function submitWholesalePrice() {
+  const restaurantCb = document.getElementById('wholesale-restaurant-enabled');
+  const communityCb = document.getElementById('wholesale-community-enabled');
+  if ((!restaurantCb || !restaurantCb.checked) && (!communityCb || !communityCb.checked)) {
+    showToast('Tick at least one tier to save.', 'error');
     return;
   }
-  try {
-    const csrfEl = document.cookie.split(';').find(function(c) { return c.trim().startsWith('csrftoken='); });
-    const csrf = csrfEl ? csrfEl.split('=')[1] : '';
-    const res = await fetch('/api/products/' + wholesaleProductId + '/wholesale/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
-      credentials: 'include',
-      body: JSON.stringify({ buyer_type: buyerType, price: price.toFixed(2), minimum_quantity: minQty, is_active: true })
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || err.price || 'Could not save wholesale price.');
-    }
-    showToast('Wholesale price saved successfully!', 'success');
-    closeWholesaleModal();
-  } catch(err) {
-    showToast(apiErrorMessage(err, 'Could not save wholesale price.'), 'error');
+
+  const csrfCookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
+  const csrf = csrfCookie ? csrfCookie.split('=')[1] : '';
+
+  const results = await Promise.all([
+    _saveWholesaleTier('restaurant', 'restaurant', csrf),
+    _saveWholesaleTier('community_group', 'community', csrf),
+  ]);
+
+  const errors = results.filter(r => r && r.error).map(r => r.error);
+  const savedCount = results.filter(r => r && r.saved).length;
+
+  if (errors.length) {
+    showToast(errors.join(' · '), 'error');
+    return;
   }
+  if (savedCount === 0) {
+    showToast('No tiers were saved.', 'error');
+    return;
+  }
+  showToast(savedCount === 2 ? 'Both wholesale tiers saved.' : 'Wholesale price saved.', 'success');
+  closeWholesaleModal();
 }
 
 // ============================================================

@@ -217,23 +217,29 @@ class ProductWholesalePriceView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, pk):
-        if request.user.role not in ['restaurant', 'community_group']:
-            return Response({'error': 'Wholesale prices are only available for restaurants and community groups.'}, status=403)
-
         try:
             product = Product.objects.get(pk=pk)
         except Product.DoesNotExist:
             return Response({'error': 'Product not found.'}, status=404)
 
-        try:
-            wholesale = WholesalePrice.objects.get(
-                product=product,
-                buyer_type=request.user.role,
-                is_active=True
-            )
-            return Response(WholesalePriceSerializer(wholesale).data)
-        except WholesalePrice.DoesNotExist:
-            return Response({'error': 'No wholesale price available for your account type.'}, status=404)
+        # Producer who owns the product gets every wholesale tier so they can edit them.
+        if request.user.role == 'producer' and product.producer == request.user:
+            tiers = WholesalePrice.objects.filter(product=product)
+            return Response(WholesalePriceSerializer(tiers, many=True).data)
+
+        # Restaurant / community group see only the tier that applies to their role.
+        if request.user.role in ['restaurant', 'community_group']:
+            try:
+                wholesale = WholesalePrice.objects.get(
+                    product=product,
+                    buyer_type=request.user.role,
+                    is_active=True
+                )
+                return Response(WholesalePriceSerializer(wholesale).data)
+            except WholesalePrice.DoesNotExist:
+                return Response({'error': 'No wholesale price available for your account type.'}, status=404)
+
+        return Response({'error': 'Wholesale prices are only available for producers (own products), restaurants, and community groups.'}, status=403)
 
     def post(self, request, pk):
         if request.user.role != 'producer':

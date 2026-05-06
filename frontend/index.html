@@ -70,6 +70,107 @@
   </div>
 </div>
 
+<!-- ==================== WHOLESALE PRICE MODAL (TC-019/TC-020 producer-side) ==================== -->
+<div id="wholesale-overlay" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:none;align-items:center;justify-content:center;padding:18px;overflow-y:auto">
+  <div id="wholesale-modal" style="width:min(640px,100%);background:#fff;border-radius:14px;box-shadow:0 18px 60px rgba(0,0,0,0.22);padding:24px;max-height:90vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px">
+      <div>
+        <h2 style="margin:0 0 4px">Wholesale Pricing</h2>
+        <p style="margin:0;color:var(--text-muted);font-size:13px">Standard customer price: <strong id="wholesale-standard-price" style="color:var(--charcoal)">£0.00</strong>. Each wholesale tier must be lower.</p>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="closeWholesaleModal()" type="button">Close</button>
+    </div>
+
+    <!-- ============= Restaurant tier ============= -->
+    <fieldset style="border:1px solid #e5e7eb;border-radius:10px;padding:14px;margin-bottom:14px">
+      <legend style="padding:0 8px;font-weight:600;color:var(--forest)">
+        <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="wholesale-restaurant-enabled" />
+          Restaurant
+        </label>
+      </legend>
+      <p style="margin:0 0 10px;color:var(--text-muted);font-size:12px">
+        Currently set: <strong id="wholesale-restaurant-current" style="color:var(--charcoal)">Not set</strong>
+      </p>
+      <div class="form-row" style="gap:12px">
+        <div class="form-group" style="flex:1">
+          <label for="wholesale-restaurant-price">Wholesale price (£)</label>
+          <input type="number" id="wholesale-restaurant-price" class="form-control" min="0.01" step="0.01" placeholder="e.g. 1.50" />
+        </div>
+        <div class="form-group" style="flex:1">
+          <label for="wholesale-restaurant-min-qty">Minimum quantity</label>
+          <input type="number" id="wholesale-restaurant-min-qty" class="form-control" min="1" step="1" value="1" />
+        </div>
+      </div>
+    </fieldset>
+
+    <!-- ============= Community group tier ============= -->
+    <fieldset style="border:1px solid #e5e7eb;border-radius:10px;padding:14px;margin-bottom:14px">
+      <legend style="padding:0 8px;font-weight:600;color:var(--forest)">
+        <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="wholesale-community-enabled" />
+          Community Group
+        </label>
+      </legend>
+      <p style="margin:0 0 10px;color:var(--text-muted);font-size:12px">
+        Currently set: <strong id="wholesale-community-current" style="color:var(--charcoal)">Not set</strong>
+      </p>
+      <div class="form-row" style="gap:12px">
+        <div class="form-group" style="flex:1">
+          <label for="wholesale-community-price">Wholesale price (£)</label>
+          <input type="number" id="wholesale-community-price" class="form-control" min="0.01" step="0.01" placeholder="e.g. 1.20" />
+        </div>
+        <div class="form-group" style="flex:1">
+          <label for="wholesale-community-min-qty">Minimum quantity</label>
+          <input type="number" id="wholesale-community-min-qty" class="form-control" min="1" step="1" value="1" />
+        </div>
+      </div>
+    </fieldset>
+
+    <p style="margin:0 0 12px;color:var(--text-muted);font-size:12px">Tick a tier to enable it. Untouched tiers are left as they are. Save sends one update per ticked tier.</p>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="closeWholesaleModal()" type="button">Cancel</button>
+      <button class="btn btn-primary" onclick="submitWholesalePrice()" type="button">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== DISPUTE MODAL (TC-014 customer-side) ==================== -->
+<div id="dispute-overlay" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;display:none;align-items:center;justify-content:center;padding:18px;overflow-y:auto">
+  <div id="dispute-modal" style="width:min(520px,100%);background:#fff;border-radius:14px;box-shadow:0 18px 60px rgba(0,0,0,0.22);padding:24px;max-height:90vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px">
+      <div>
+        <h2 style="margin:0 0 4px">Raise a Dispute</h2>
+        <p style="margin:0;color:var(--text-muted);font-size:13px">Tell us what went wrong. An admin will review and respond.</p>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="closeDisputeModal()" type="button">Close</button>
+    </div>
+
+    <div class="form-group">
+      <label for="dispute-reason">Reason <span class="req">*</span></label>
+      <select id="dispute-reason" class="form-control">
+        <option value="">— Select a reason —</option>
+        <option value="damaged">Items arrived damaged</option>
+        <option value="missing">Items missing from order</option>
+        <option value="wrong_item">Wrong items delivered</option>
+        <option value="quality">Quality below expected standard</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="dispute-description">Description <span class="req">*</span></label>
+      <textarea id="dispute-description" class="form-control" rows="4" maxlength="1000" placeholder="Describe the issue in detail..." style="resize:vertical"></textarea>
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+      <button class="btn btn-secondary" onclick="closeDisputeModal()" type="button">Cancel</button>
+      <button class="btn btn-warning" onclick="submitDispute()" type="button">Submit Dispute</button>
+    </div>
+  </div>
+</div>
+
 <!-- ==================== HOME PAGE ==================== -->
 <div class="page active" id="page-home">
 

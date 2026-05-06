@@ -41,13 +41,13 @@ async function resolveDispute(disputeId, data) {
   if (!data || typeof data !== 'object') {
     throw new Error('resolveDispute: data is required');
   }
-  return patch(`/api/admin/disputes/${encodeURIComponent(disputeId)}/resolve/`, data);
+  return patch(`/api/orders/admin/disputes/${encodeURIComponent(disputeId)}/resolve/`, data);
 }
 
 /**
- * Admin list of disputes (if backend exposes GET /api/admin/disputes/).
+ * Admin list of all disputes. Backend route: GET /api/orders/admin/disputes/.
  * @returns {Promise<object|array>}
  */
 async function listAdminDisputes() {
-  return get('/api/admin/disputes/');
+  return get('/api/orders/admin/disputes/');
 }
