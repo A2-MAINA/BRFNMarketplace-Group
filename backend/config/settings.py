@@ -31,6 +31,11 @@ if not SECRET_KEY:
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
+CSRF_TRUSTED_ORIGINS = os.environ.get(
+    'CSRF_TRUSTED_ORIGINS',
+    'http://localhost:3025,http://127.0.0.1:3025,http://localhost:8025,http://127.0.0.1:8025'
+).split(',')
+
 
 # Application definition
 
@@ -189,4 +194,6 @@ if not DEBUG:
     SECURE_REFERRER_POLICY = 'same-origin'
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     X_FRAME_OPTIONS = 'DENY'
+
+
 
