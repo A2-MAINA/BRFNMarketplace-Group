@@ -4,6 +4,8 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 import datetime
+import os
+import stripe
 
 from .models import Order, OrderProducerGroup, OrderStatusHistory, Payment
 from .serializers import (
@@ -327,8 +329,6 @@ class CreatePaymentIntentView(APIView):
         except Order.DoesNotExist:
             return Response({'error': 'Order not found.'}, status=404)
 
-        import os
-        import stripe
         stripe_secret_key = os.environ.get('STRIPE_SECRET_KEY', '')
         if not stripe_secret_key:
             return Response(
@@ -349,13 +349,58 @@ class CreatePaymentIntentView(APIView):
             )
             order.stripe_payment_intent_id = intent['id']
             order.save(update_fields=['stripe_payment_intent_id'])
-            return Response({'client_secret': intent['client_secret']})
+            payment_number = getattr(getattr(order, 'payment', None), 'payment_number', '')
+            return Response({
+                'client_secret': intent['client_secret'],
+                'payment_intent_id': intent['id'],
+                'payment_number': payment_number,
+            })
         except Exception as e:
             return Response({'error': str(e)}, status=400)
 
 
 class ConfirmPaymentView(APIView):
     permission_classes = [IsAuthenticated]
+
+    @staticmethod
+    def _safe_get(obj, key, default=None):
+        if obj is None:
+            return default
+        try:
+            return obj[key]
+        except Exception:
+            return default
+
+    @staticmethod
+    def _build_receipt(payment):
+        order = payment.order
+        customer = order.customer
+        customer_profile = getattr(customer, 'customer_profile', None)
+        customer_name = getattr(customer_profile, 'full_name', '') or customer.email
+        return {
+            'receipt_number': payment.receipt_number,
+            'receipt_issued_at': payment.receipt_issued_at,
+            'payment_number': payment.payment_number,
+            'payment_id': payment.pk,
+            'stripe': {
+                'payment_intent_id': payment.transaction_id,
+                'charge_id': payment.stripe_charge_id,
+                'receipt_url': payment.receipt_url,
+            },
+            'order_id': order.pk,
+            'invoice_number': order.invoice_number,
+            'customer': {
+                'id': customer.pk,
+                'email': customer.email,
+                'name': customer_name,
+            },
+            'amount': payment.amount,
+            'currency': payment.currency,
+            'status': payment.status,
+            'payment_method_type': payment.payment_method_type,
+            'payment_method_last4': payment.payment_method_last4,
+            'paid_at': payment.paid_at,
+        }
 
     def post(self, request):
         if request.user.role != 'customer':
@@ -369,13 +414,122 @@ class ConfirmPaymentView(APIView):
         except Order.DoesNotExist:
             return Response({'error': 'Order not found.'}, status=404)
 
+        stripe_secret_key = os.environ.get('STRIPE_SECRET_KEY', '')
+        if not stripe_secret_key:
+            return Response(
+                {'error': 'STRIPE_SECRET_KEY is not configured on the backend.'},
+                status=500
+            )
+        stripe.api_key = stripe_secret_key
+
+        if payment_intent_id != order.stripe_payment_intent_id:
+            return Response({'error': 'Payment intent does not match this order.'}, status=400)
+
+        try:
+            intent = stripe.PaymentIntent.retrieve(payment_intent_id, expand=['latest_charge'])
+        except Exception as e:
+            return Response({'error': f'Unable to verify payment: {e}'}, status=400)
+
+        if self._safe_get(intent, 'status') != 'succeeded':
+            return Response(
+                {'error': f"Payment is not complete. Current status: {self._safe_get(intent, 'status')}"},
+                status=400
+            )
+
+        latest_charge = self._safe_get(intent, 'latest_charge', {}) or {}
+        payment_method_details = self._safe_get(latest_charge, 'payment_method_details', {}) or {}
+        card_details = self._safe_get(payment_method_details, 'card', {}) or {}
+
         try:
             payment = order.payment
             payment.transaction_id = payment_intent_id
-            payment.status = 'processed'
+            payment.stripe_charge_id = self._safe_get(latest_charge, 'id', '')
+            payment.currency = self._safe_get(intent, 'currency', 'gbp')
+            payment.payment_method_type = self._safe_get(payment_method_details, 'type', '')
+            payment.payment_method_last4 = self._safe_get(card_details, 'last4', '')
+            payment.receipt_url = self._safe_get(latest_charge, 'receipt_url', '')
+            if not payment.receipt_number:
+                payment.receipt_number = f"RCPT-{payment.payment_number or payment.pk}"
+            if not payment.receipt_issued_at:
+                payment.receipt_issued_at = timezone.now()
+            payment.status = 'paid'
             payment.paid_at = timezone.now()
-            payment.save(update_fields=['transaction_id', 'status', 'paid_at'])
+            payment.save(update_fields=[
+                'transaction_id',
+                'stripe_charge_id',
+                'currency',
+                'payment_method_type',
+                'payment_method_last4',
+                'receipt_url',
+                'receipt_number',
+                'receipt_issued_at',
+                'status',
+                'paid_at',
+            ])
         except Payment.DoesNotExist:
             return Response({'error': 'Payment record not found.'}, status=404)
 
-        return Response(OrderSerializer(order).data)
+        return Response({
+            'order': OrderSerializer(order).data,
+            'payment': PaymentSerializer(payment).data,
+            'receipt': self._build_receipt(payment),
+        })
+
+
+class CustomerPaymentReceiptView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        if request.user.role != 'customer':
+            return Response({'error': 'Only customers can view receipts.'}, status=403)
+
+        try:
+            order = Order.objects.get(pk=pk, customer=request.user)
+        except Order.DoesNotExist:
+            return Response({'error': 'Order not found.'}, status=404)
+
+        try:
+            payment = order.payment
+        except Payment.DoesNotExist:
+            return Response({'error': 'Payment record not found.'}, status=404)
+
+        if payment.status not in ['paid', 'processed', 'refunded']:
+            return Response({'error': 'Receipt is not available until payment is completed.'}, status=400)
+
+        if not payment.payment_number:
+            year = datetime.date.today().year
+            payment.payment_number = f"PAY-{year}-{payment.pk:06d}"
+        if not payment.receipt_number:
+            payment.receipt_number = f"RCPT-{payment.payment_number}"
+        if not payment.receipt_issued_at:
+            payment.receipt_issued_at = payment.paid_at or timezone.now()
+        payment.save(update_fields=['payment_number', 'receipt_number', 'receipt_issued_at'])
+
+        customer_profile = getattr(order.customer, 'customer_profile', None)
+        customer_name = getattr(customer_profile, 'full_name', '') or order.customer.email
+        return Response({
+            'receipt_number': payment.receipt_number,
+            'receipt_issued_at': payment.receipt_issued_at,
+            'payment_number': payment.payment_number,
+            'payment_id': payment.pk,
+            'stripe': {
+                'payment_intent_id': payment.transaction_id,
+                'charge_id': payment.stripe_charge_id,
+                'receipt_url': payment.receipt_url,
+            },
+            'order_id': order.pk,
+            'invoice_number': order.invoice_number,
+            'customer': {
+                'id': order.customer.pk,
+                'email': order.customer.email,
+                'name': customer_name,
+            },
+            'amount': payment.amount,
+            'currency': payment.currency,
+            'status': payment.status,
+            'payment_method_type': payment.payment_method_type,
+            'payment_method_last4': payment.payment_method_last4,
+            'paid_at': payment.paid_at,
+            'order': OrderSerializer(order).data,
+            'payment': PaymentSerializer(payment).data,
+        })

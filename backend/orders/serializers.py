@@ -115,6 +115,7 @@ class OrderSerializer(serializers.ModelSerializer):
     status_history = OrderStatusHistorySerializer(many=True, read_only=True)
     customer_email = serializers.EmailField(source='customer.email', read_only=True)
     can_cancel = serializers.SerializerMethodField()
+    payment = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -133,6 +134,7 @@ class OrderSerializer(serializers.ModelSerializer):
             'stripe_payment_intent_id',
             'cancellation_deadline',
             'can_cancel',
+            'payment',
             'producer_groups',
             'status_history',
             'created_at',
@@ -142,6 +144,12 @@ class OrderSerializer(serializers.ModelSerializer):
 
     def get_can_cancel(self, obj):
         return obj.can_be_cancelled()
+
+    def get_payment(self, obj):
+        try:
+            return PaymentSerializer(obj.payment).data
+        except Payment.DoesNotExist:
+            return None
 
 
 # ============================
@@ -408,7 +416,9 @@ class PaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment
         fields = [
-            'id', 'order', 'transaction_id', 'amount',
+            'id', 'order', 'payment_number', 'transaction_id', 'stripe_charge_id',
+            'currency', 'payment_method_type', 'payment_method_last4', 'receipt_url',
+            'receipt_number', 'receipt_issued_at', 'amount',
             'commission', 'producer_payout', 'status',
             'paid_at', 'processed_at', 'created_at',
         ]

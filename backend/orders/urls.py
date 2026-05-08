@@ -8,6 +8,7 @@ from .views import (
     AdminCommissionReportView,
     CreatePaymentIntentView,
     ConfirmPaymentView,
+    CustomerPaymentReceiptView,
 )
 
 urlpatterns = [
@@ -27,4 +28,5 @@ urlpatterns = [
     # Payments — TC-007, TC-008
     path('payments/create-intent/', CreatePaymentIntentView.as_view(), name='payment-create-intent'),
     path('payments/confirm/', ConfirmPaymentView.as_view(), name='payment-confirm'),
+    path('<int:pk>/receipt/', CustomerPaymentReceiptView.as_view(), name='payment-receipt'),
 ]

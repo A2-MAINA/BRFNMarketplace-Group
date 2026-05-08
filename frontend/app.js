@@ -2188,7 +2188,16 @@ function renderCustomerDash() {
   };
 
   const toOrderId = (o) => o.invoice_number ?? o.id ?? '—';
-  const toDate = (o) => o.created_at ?? o.order_date ?? '—';
+  const toDate = (o) => {
+    const raw = o.created_at ?? o.order_date ?? '';
+    if (!raw) return '—';
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return String(raw);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}/${month}/${day}`;
+  };
   const toProducers = (o) => {
     const groups = Array.isArray(o.producer_groups) ? o.producer_groups : [];
     const names = groups.map(g => g.producer_info?.business_name || g.producer_info?.email).filter(Boolean);
